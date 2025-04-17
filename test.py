@@ -187,7 +187,7 @@ if mu_A == mu_B:
             mode='markers',
             marker=dict(size=12, color='#10B981', symbol='square'),
             name='Stock A',
-            hovertemplate='Risk: %{x:.2f}%<br>Return: %{y:.2f}%<br>Asset: Stock A<extra></extra>'
+            hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>Stock A: {w_star*100:.1f}%<br>Stock B: {(1-w_star)*100:.1f}%<extra></extra>'
         ))
         
         fig.add_trace(go.Scatter(
