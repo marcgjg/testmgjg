@@ -1,22 +1,18 @@
 import streamlit as st
 import numpy as np
-import pandas as pd
-import uuid
+import numpy_financial as npf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-from PIL import Image
-import io
 
 # Set the page layout to wide and add a custom title/icon
 st.set_page_config(
-    page_title="PV/FV Calculator",
-    page_icon="💰",
+    page_title="NPV/IRR Calculator",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS for better styling (matching the PV/FV app)
 st.markdown("""
 <style>
     .main-header {
@@ -56,277 +52,344 @@ st.markdown("""
         overflow: hidden;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
+    .info-box {
+        background-color: #F0F9FF;
+        border-left: 4px solid #0284C7;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 0px 5px 5px 0px;
+    }
+    .cf-table {
+        margin-top: 1rem;
+    }
+    .cf-table th {
+        text-align: center;
+        background-color: #EFF6FF;
+    }
+    .results-box {
+        padding: 1rem;
+        background-color: #F0FDF4;
+        border-radius: 5px;
+        border-left: 4px solid #22C55E;
+        margin-top: 1rem;
+    }
+    .warning-box {
+        padding: 1rem;
+        background-color: #FEF2F2;
+        border-radius: 5px;
+        border-left: 4px solid #EF4444;
+        margin-top: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-def get_colors():
-    """Return a list of aesthetically pleasing colors for the chart."""
-    return [
-        '#1f77b4',  # Blue
-        '#ff7f0e',  # Orange
-        '#2ca02c',  # Green
-        '#d62728',  # Red
-        '#9467bd',  # Purple
-        '#8c564b',  # Brown
-        '#e377c2',  # Pink
-        '#7f7f7f',  # Gray
-        '#bcbd22',  # Yellow-green
-        '#17becf',  # Teal
-    ]
+# Custom header with logo/title
+st.markdown('<h1 class="main-header">📊 NPV and IRR Visualizer</h1>', unsafe_allow_html=True)
 
-def format_currency(value):
-    """Format a value as currency."""
-    return f"€{value:,.2f}"
-
-def main():
-    # Custom header with logo/title
-    st.markdown('<h1 class="main-header">💰 Future Value / Present Value Visualizer</h1>', unsafe_allow_html=True)
+# Add a description
+with st.expander("ℹ️ About this tool", expanded=False):
+    st.markdown("""
+    This tool helps you visualize the **Net Present Value (NPV)** and **Internal Rate of Return (IRR)** for a series of cash flows.
     
-    # Add a description
-    with st.expander("ℹ️ About this tool", expanded=False):
-        st.markdown("""
-        This tool helps you visualize the concepts of **Present Value (PV)** and **Future Value (FV)** 
-        for different interest rates and time periods.
-        
-        - **Future Value (FV)**: Shows how €100 invested today grows over time
-        - **Present Value (PV)**: Shows what amount today is equivalent to €100 in the future
-        
-        Add multiple curves to compare different scenarios.
-        """)
+    - **NPV (Net Present Value)**: Calculates the present value of future cash flows minus the initial investment
+    - **IRR (Internal Rate of Return)**: The discount rate at which the NPV equals zero
+    
+    Enter your cash flows as comma-separated values, with the initial investment as a negative number.
+    """)
 
-    # Initialize session state to store curves and previous parameters
-    if "curves" not in st.session_state:
-        st.session_state["curves"] = {}  # To store curves (key: unique, value: (label, series))
-    if "prev_years" not in st.session_state:
-        st.session_state["prev_years"] = None
-    if "prev_calc_type" not in st.session_state:
-        st.session_state["prev_calc_type"] = None
-    if "curve_colors" not in st.session_state:
-        st.session_state["curve_colors"] = {}
+# Create two columns: left for controls; right for diagram
+col_left, col_right = st.columns([1, 2])
 
-    # Use two columns with a better proportion
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
-        # Card-like container for calculation options
+with col_left:
+    # Card for input controls
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">Cash Flow Inputs</div>', unsafe_allow_html=True)
+    
+    # Let students enter cash flows as comma-separated values
+    cash_flow_input = st.text_area(
+        "Enter cash flows for each period (comma separated):",
+        "-1000, 300, 400, 500, 600",
+        help="Enter the initial investment as a negative number, followed by the cash inflows"
+    )
+    
+    # Convert the cash flow input into a list of floats
+    try:
+        cash_flows = [float(x.strip()) for x in cash_flow_input.split(",")]
+        valid_input = True
+    except Exception:
+        st.markdown('<div class="warning-box">Invalid input. Please enter valid numbers separated by commas.</div>', unsafe_allow_html=True)
+        valid_input = False
+    
+    # Option to add a template
+    if st.button("📋 Use Example Template"):
+        cash_flow_input = "-1000, 300, 400, 500, 600"
+        st.experimental_rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if valid_input:
+        # Card for displaying cash flow table
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="subheader">Calculation Settings</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subheader">Cash Flow Summary</div>', unsafe_allow_html=True)
         
-        calculation_type = st.radio(
-            "Select Calculation Type:",
-            ("Future Value", "Present Value"),
-            horizontal=True
-        )
-
-        principal = st.number_input(
-            "Initial Amount (€):", 
-            min_value=1, 
-            max_value=10000, 
-            value=100,
-            step=10,
-            help="The starting amount for FV or final amount for PV calculations"
-        )
-
-        years = st.slider(
-            "Number of years:", 
-            min_value=1, 
-            max_value=50, 
-            value=10,
-            help="Time horizon for the calculation"
-        )
+        # Create a table showing periods and cash flows
+        periods = list(range(len(cash_flows)))
+        cf_data = {"Period": periods, "Cash Flow": cash_flows}
         
-        interest_rate_percent = st.slider(
-            "Interest/Discount rate (%):", 
-            min_value=0.0, 
-            max_value=20.0, 
-            value=5.0,
-            step=0.1,
-            help="Annual interest rate for FV or discount rate for PV"
-        )
-        interest_rate = interest_rate_percent / 100.0
+        # Display cash flow table with custom styling
+        st.markdown('<div class="cf-table">', unsafe_allow_html=True)
+        cf_table = "<table width='100%'><thead><tr><th>Period</th><th>Cash Flow</th></tr></thead><tbody>"
+        
+        for i, cf in zip(periods, cash_flows):
+            # Highlight negative values in red, positive in green
+            color = "#DC2626" if cf < 0 else "#16A34A" if cf > 0 else "#000000"
+            cf_table += f"<tr><td style='text-align: center;'>{i}</td><td style='text-align: right; color: {color};'>€{cf:,.2f}</td></tr>"
+        
+        cf_table += "</tbody></table>"
+        st.markdown(cf_table, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
-        # Chart controls
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="subheader">Chart Controls</div>', unsafe_allow_html=True)
         
-        col_add, col_reset = st.columns(2)
-        with col_add:
-            add_curve = st.button("➕ Add to Chart", use_container_width=True)
-        with col_reset:
-            reset_button = st.button("🔄 Reset Chart", use_container_width=True)
+        # Calculate and display initial investment and total cash inflows
+        init_investment = cash_flows[0] if cash_flows[0] < 0 else 0
+        total_inflows = sum(cf for cf in cash_flows if cf > 0)
         
-        # Reset curves on button click
-        if reset_button:
-            st.session_state["curves"] = {}
-            st.session_state["curve_colors"] = {}
-
-        # Clear curves automatically when switching FV/PV
-        if st.session_state["prev_calc_type"] is not None and calculation_type != st.session_state["prev_calc_type"]:
-            st.session_state["curves"] = {}
-            st.session_state["curve_colors"] = {}
-
-        # Update the stored previous parameters
-        st.session_state["prev_years"] = years
-        st.session_state["prev_calc_type"] = calculation_type
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Calculate the current curve
-        year_range = np.arange(0, years + 1)
-        if calculation_type == "Future Value":
-            # FV = principal * (1 + r)^n
-            values = principal * (1 + interest_rate)**year_range
-            calc_label = "Future Value"
-        else:
-            # PV = principal / (1 + r)^n
-            values = principal / ((1 + interest_rate)**year_range)
-            calc_label = "Present Value"
-
-        # Create a Pandas Series for easy plotting
-        curve_series = pd.Series(data=values.round(2), index=year_range)
-        
-        # Add curve to chart when button is clicked
-        if add_curve:
-            curve_label = f"{calc_label} @ {interest_rate_percent}%"
-            curve_key = f"{uuid.uuid4().hex[:5]}"
-            st.session_state["curves"][curve_key] = (curve_label, curve_series)
-            
-            # Assign a color from our palette
-            colors = get_colors()
-            color_idx = len(st.session_state["curve_colors"]) % len(colors)
-            st.session_state["curve_colors"][curve_key] = colors[color_idx]
-            
-            # Show success message
-            st.success(f"Added curve: {curve_label}")
-
-        # Display the current calculation table
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="subheader">Current {calc_label}</div>', unsafe_allow_html=True)
-        
-        # Create a more visually appealing table
-        df_current = pd.DataFrame({"Year": year_range, "Value (€)": curve_series.values})
-        
-        # Add visual indicator of growth/decay
-        if len(df_current) > 1:
-            max_val = df_current["Value (€)"].max()
-            min_val = df_current["Value (€)"].min()
-            range_val = max_val - min_val
-            
-            def color_scale(val):
-                if calculation_type == "Future Value":
-                    # Blue gradient for FV (darker = higher value)
-                    normalized = (val - min_val) / range_val if range_val > 0 else 0
-                    return f'background-color: rgba(25, 118, 210, {normalized * 0.4})'
-                else:
-                    # Green gradient for PV (darker = higher value)
-                    normalized = (val - min_val) / range_val if range_val > 0 else 0
-                    return f'background-color: rgba(46, 125, 50, {normalized * 0.4})'
-            
-            styled_df = df_current.style.format({
-                "Value (€)": format_currency
-            }).applymap(color_scale, subset=["Value (€)"])
-            
-            st.dataframe(styled_df, use_container_width=True)
-        else:
-            st.dataframe(df_current.style.format({"Value (€)": format_currency}), use_container_width=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Initial Investment", f"€{init_investment:,.2f}")
+        with col2:
+            st.metric("Total Cash Inflows", f"€{total_inflows:,.2f}")
         
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Card for discount rate controls
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">Discount Rate Settings</div>', unsafe_allow_html=True)
+    
+    # Slider to select a discount rate range (in percentages)
+    discount_rate_range = st.slider(
+        "Discount Rate Range (%):",
+        min_value=0,
+        max_value=50,
+        value=(5, 30),
+        help="Select the range of discount rates to analyze"
+    )
+    min_rate, max_rate = discount_rate_range
+    min_rate_dec = min_rate / 100.0
+    max_rate_dec = max_rate / 100.0
+    
+    # Add resolution control
+    resolution = st.select_slider(
+        "Chart Resolution:",
+        options=["Low", "Medium", "High"],
+        value="Medium",
+        help="Higher resolution shows more data points but may be slower"
+    )
+    
+    resolution_points = {"Low": 50, "Medium": 100, "High": 200}
+    num_points = resolution_points[resolution]
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Information box
+    st.markdown('<div class="info-box">', unsafe_allow_html=True)
+    st.markdown("""
+    The NPV is calculated as:
+    
+    NPV = CF₀ + CF₁/(1+r)¹ + CF₂/(1+r)² + ... + CFₙ/(1+r)ⁿ
+    
+    Where:
+    - CF = Cash flow in period t
+    - r = Discount rate
+    - n = Number of periods
+    
+    The IRR is the discount rate where NPV = 0
+    """)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with col2:
-        # Card-like container for the chart
+# Define a function to compute NPV
+def compute_npv(cash_flows, r):
+    return sum(cf / ((1 + r) ** t) for t, cf in enumerate(cash_flows))
+
+if valid_input:
+    # Generate a set of discount rates to evaluate
+    rates = np.linspace(min_rate_dec, max_rate_dec, num_points)
+    npv_values = [compute_npv(cash_flows, r) for r in rates]
+    
+    # Calculate the IRR using numpy_financial
+    try:
+        irr = npf.irr(cash_flows)
+        irr_percent = irr * 100
+        irr_valid = True
+    except Exception:
+        irr = None
+        irr_valid = False
+    
+    with col_right:
+        # Card for NPV visualization
         st.markdown('<div class="card plot-container">', unsafe_allow_html=True)
         
-        # Create a plotly figure for better interactivity
-        if st.session_state["curves"]:
-            # Combine all stored curves into a single DataFrame
-            df_plot = pd.DataFrame()
-            for curve_key, (label, series) in st.session_state["curves"].items():
-                df_plot[label] = series
-            
-            # Create an interactive Plotly figure
-            fig = go.Figure()
-            
-            for curve_key, (label, _) in st.session_state["curves"].items():
-                color = st.session_state["curve_colors"].get(curve_key, "#1f77b4")
-                fig.add_trace(go.Scatter(
-                    x=df_plot.index,
-                    y=df_plot[label],
-                    mode='lines+markers',
-                    name=label,
-                    line=dict(color=color, width=3),
-                    marker=dict(size=8, color=color),
-                    hovertemplate='Year: %{x}<br>Value: €%{y:.2f}<extra></extra>'
-                ))
-            
-            # Customize the layout
-            title = f"{'Future Value' if calculation_type == 'Future Value' else 'Present Value'} Comparison"
-            fig.update_layout(
-                title=dict(
-                    text=title,
-                    font=dict(size=24, family="Arial, sans-serif", color="#1E3A8A"),
-                    x=0.5,
-                    xanchor='center'
-                ),
-                xaxis=dict(
-                    title="Year",
-                    tickmode='linear',
-                    tick0=0,
-                    dtick=5 if years > 20 else 1,
-                    gridcolor='rgba(230, 230, 230, 0.8)'
-                ),
-                yaxis=dict(
-                    title="Value (€)",
-                    gridcolor='rgba(230, 230, 230, 0.8)',
-                    tickformat=',.2f'
-                ),
-                plot_bgcolor='rgba(248, 250, 252, 0.5)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                hovermode='closest',
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.2,
-                    xanchor="center",
-                    x=0.5
-                ),
-                height=600,
-                margin=dict(l=60, r=40, t=80, b=80)
+        # Create the plotly figure
+        fig = go.Figure()
+        
+        # Add the NPV curve
+        fig.add_trace(go.Scatter(
+            x=rates * 100,
+            y=npv_values,
+            mode='lines',
+            name='NPV Curve',
+            line=dict(color='#3b82f6', width=3),
+            hovertemplate='Rate: %{x:.2f}%<br>NPV: €%{y:.2f}<extra></extra>'
+        ))
+        
+        # Add zero line
+        fig.add_shape(
+            type="line",
+            x0=min_rate,
+            y0=0,
+            x1=max_rate,
+            y1=0,
+            line=dict(
+                color="black",
+                width=1,
+                dash="dash",
             )
+        )
+        
+        # If IRR is computed and lies within the selected discount rate range, mark it
+        if irr_valid and (min_rate <= (irr * 100) <= max_rate):
+            npv_at_irr = compute_npv(cash_flows, irr)
             
-            # Add a horizontal line at the initial value
+            # Add IRR point
+            fig.add_trace(go.Scatter(
+                x=[irr * 100],
+                y=[npv_at_irr],
+                mode='markers',
+                marker=dict(size=12, color='red', symbol='circle'),
+                name=f'IRR = {irr_percent:.2f}%',
+                hovertemplate='IRR: %{x:.2f}%<br>NPV: €%{y:.2f}<extra></extra>'
+            ))
+            
+            # Add IRR vertical line
             fig.add_shape(
                 type="line",
-                x0=0,
-                y0=principal,
-                x1=years,
-                y1=principal,
+                x0=irr * 100,
+                y0=min(npv_values) if min(npv_values) < 0 else 0,
+                x1=irr * 100,
+                y1=0,
                 line=dict(
-                    color="rgba(128, 128, 128, 0.5)",
-                    width=2,
+                    color="red",
+                    width=1,
                     dash="dash",
-                ),
-                name="Initial Value"
+                )
             )
             
-            # Add annotations
+            # Add IRR annotation
             fig.add_annotation(
-                x=0,
-                y=principal,
-                text=f"Initial: €{principal}",
-                showarrow=False,
-                yshift=10,
-                font=dict(color="rgba(128, 128, 128, 1)")
+                x=irr * 100,
+                y=0,
+                text=f"IRR: {irr_percent:.2f}%",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="red",
+                ax=0,
+                ay=-40,
+                bordercolor="red",
+                borderwidth=2,
+                borderpad=4,
+                bgcolor="white",
+                opacity=0.8,
+                font=dict(color="red")
             )
+        
+        # Customize the layout
+        fig.update_layout(
+            title=dict(
+                text="NPV vs. Discount Rate",
+                font=dict(size=24, family="Arial, sans-serif", color="#1E3A8A"),
+                x=0.5,
+                xanchor='center'
+            ),
+            xaxis=dict(
+                title="Discount Rate (%)",
+                tickformat='.1f',
+                gridcolor='rgba(230, 230, 230, 0.8)'
+            ),
+            yaxis=dict(
+                title="Net Present Value (€)",
+                tickformat=',.2f',
+                gridcolor='rgba(230, 230, 230, 0.8)',
+                zeroline=True,
+                zerolinecolor='rgba(0, 0, 0, 0.2)',
+                zerolinewidth=1
+            ),
+            plot_bgcolor='rgba(248, 250, 252, 0.5)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            hovermode='closest',
+            height=600,
+            margin=dict(l=60, r=40, t=80, b=60)
+        )
+        
+        # Display the chart
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Results section
+        if irr_valid:
+            st.markdown('<div class="results-box">', unsafe_allow_html=True)
             
-            st.plotly_chart(fig, use_container_width=True)
+            # Create columns for results
+            res_col1, res_col2 = st.columns(2)
+            
+            with res_col1:
+                st.markdown(f"**Internal Rate of Return (IRR):** {irr_percent:.2f}%")
+                st.markdown("*The discount rate at which NPV equals zero*")
+            
+            with res_col2:
+                # Calculate NPV at a common discount rate (10%)
+                standard_rate = 0.10  # 10%
+                npv_at_standard = compute_npv(cash_flows, standard_rate)
+                st.markdown(f"**NPV at 10% discount rate:** €{npv_at_standard:,.2f}")
+                
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
-            # Show a message when no curves are added
-            st.info("Use the '➕ Add to Chart' button to add curves for comparison.")
+            st.markdown('<div class="warning-box">', unsafe_allow_html=True)
+            st.markdown("**No valid IRR found within the given range.**")
+            st.markdown("This usually happens when the cash flows don't change sign (from negative to positive or vice versa).")
+            st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Footer with information
-    st.markdown('<div class="footer">Explore how money grows or discounts over time with different interest rates.</div>', unsafe_allow_html=True)
+        
+        # Add additional information about the results
+        with st.expander("📈 NPV Interpretation", expanded=False):
+            st.markdown("""
+            ### Interpreting NPV Results
+            
+            - **Positive NPV**: The investment adds value, and should be accepted
+            - **Negative NPV**: The investment subtracts value, and should be rejected
+            - **Zero NPV**: The investment breaks even
+            
+            ### Decision Rule
+            
+            Accept investment opportunities with positive NPVs at your required rate of return.
+            When comparing mutually exclusive projects, choose the one with the highest NPV.
+            """)
+        
+        with st.expander("💰 IRR Interpretation", expanded=False):
+            st.markdown("""
+            ### Interpreting IRR Results
+            
+            The IRR is the discount rate that makes the NPV equal to zero. It represents the annualized effective return rate:
+            
+            - If IRR > Required Rate of Return: Accept the project
+            - If IRR < Required Rate of Return: Reject the project
+            
+            ### Limitations
+            
+            - Multiple IRRs can exist if cash flows change sign more than once
+            - IRR assumes reinvestment at the IRR rate itself, which may be unrealistic
+            - IRR may give misleading results when comparing mutually exclusive projects
+            """)
 
-if __name__ == "__main__":
-    main()
+# Footer
+st.markdown('<div class="footer">NPV and IRR Visualizer | For educational purposes</div>', unsafe_allow_html=True)
