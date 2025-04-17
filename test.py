@@ -290,7 +290,24 @@ else:
     tangency_weight_B = w_star_B
 
 # Split into efficient and inefficient frontiers
-efficient_mask = portfolio_returns >= mvp_return  # Keep only points above or equal to MVP's return
+equal_returns = abs(mu_A - mu_B) < 1e-6  # Check if returns are equal (within numerical precision)
+
+if equal_returns:
+    # When returns are equal, only MVP is efficient (frontier collapses to a point)
+    efficient_mask = np.zeros_like(portfolio_returns, dtype=bool)
+    efficient_mask[np.argmin(portfolio_stds)] = True  # Only the MVP is on the efficient frontier
+    
+    st.markdown('<div class="warning-box">', unsafe_allow_html=True)
+    st.markdown(f"""
+    **Note:** Both assets have the same expected return ({mu_A*100:.2f}%). 
+    In this case, the efficient frontier collapses to a single point (the MVP), 
+    as there's no reason to take on additional risk for the same return.
+    """)
+    st.markdown('</div>', unsafe_allow_html=True)
+else:
+    # Normal case: efficient frontier is above the MVP
+    efficient_mask = portfolio_returns >= mvp_return  # Keep only points above or equal to MVP's return
+
 efficient_returns = portfolio_returns[efficient_mask]
 efficient_stds = portfolio_stds[efficient_mask]
 efficient_weights_A = weights_A[efficient_mask]
