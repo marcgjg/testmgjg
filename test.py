@@ -1,18 +1,18 @@
 import streamlit as st
 import numpy as np
-import numpy_financial as npf
 import plotly.graph_objects as go
+import pandas as pd
 from plotly.subplots import make_subplots
 
 # Set the page layout to wide and add a custom title/icon
 st.set_page_config(
-    page_title="NPV/IRR Calculator",
-    page_icon="📊",
+    page_title="Two-Asset Frontier",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling (matching the PV/FV app)
+# Custom CSS for better styling (matching the previous apps)
 st.markdown("""
 <style>
     .main-header {
@@ -59,19 +59,42 @@ st.markdown("""
         margin-bottom: 1rem;
         border-radius: 0px 5px 5px 0px;
     }
-    .cf-table {
-        margin-top: 1rem;
-    }
-    .cf-table th {
-        text-align: center;
-        background-color: #EFF6FF;
-    }
     .results-box {
         padding: 1rem;
         background-color: #F0FDF4;
         border-radius: 5px;
         border-left: 4px solid #22C55E;
         margin-top: 1rem;
+    }
+    .metric-card {
+        background-color: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        text-align: center;
+    }
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1E3A8A;
+    }
+    .metric-label {
+        color: #64748B;
+        font-size: 0.9rem;
+    }
+    .stock-display {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 1rem;
+        background-color: #EFF6FF;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+    }
+    .stock-name {
+        font-weight: 600;
+        color: #1E40AF;
     }
     .warning-box {
         padding: 1rem;
@@ -84,312 +107,477 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Custom header with logo/title
-st.markdown('<h1 class="main-header">📊 NPV and IRR Visualizer</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">📈 Two-Asset Efficient Frontier</h1>', unsafe_allow_html=True)
 
 # Add a description
 with st.expander("ℹ️ About this tool", expanded=False):
     st.markdown("""
-    This tool helps you visualize the **Net Present Value (NPV)** and **Internal Rate of Return (IRR)** for a series of cash flows.
+    This tool visualizes the **Efficient Frontier** for a portfolio of two assets.
     
-    - **NPV (Net Present Value)**: Calculates the present value of future cash flows minus the initial investment
-    - **IRR (Internal Rate of Return)**: The discount rate at which the NPV equals zero
+    - The **Efficient Frontier** shows all optimal portfolios that offer the highest expected return for a defined level of risk
+    - The **Minimum Variance Portfolio (MVP)** is the portfolio with the lowest possible risk
     
-    Enter your cash flows as comma-separated values, with the initial investment as a negative number.
+    Adjust the sliders to see how changes in returns, standard deviations, and correlation affect the frontier.
     """)
 
-# Create two columns: left for controls; right for diagram
-col_left, col_right = st.columns([1, 2])
+# Create columns for inputs and plot
+col1, col2 = st.columns([1, 2])
 
-with col_left:
-    # Card for input controls
+with col1:
+    # Card for asset inputs
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="subheader">Cash Flow Inputs</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">Asset Parameters</div>', unsafe_allow_html=True)
     
-    # Let students enter cash flows as comma-separated values
-    cash_flow_input = st.text_area(
-        "Enter cash flows for each period (comma separated):",
-        "-1000, 300, 400, 500, 600",
-        help="Enter the initial investment as a negative number, followed by the cash inflows"
-    )
+    # Add option to use stock names
+    use_custom_names = st.checkbox("Use custom asset names", value=False)
     
-    # Convert the cash flow input into a list of floats
-    try:
-        cash_flows = [float(x.strip()) for x in cash_flow_input.split(",")]
-        valid_input = True
-    except Exception:
-        st.markdown('<div class="warning-box">Invalid input. Please enter valid numbers separated by commas.</div>', unsafe_allow_html=True)
-        valid_input = False
+    if use_custom_names:
+        asset_a_name = st.text_input("Asset A Name", value="Technology ETF")
+        asset_b_name = st.text_input("Asset B Name", value="Bond Fund")
+    else:
+        asset_a_name = "Asset A"
+        asset_b_name = "Asset B"
     
-    # Option to add a template
-    if st.button("📋 Use Example Template"):
-        cash_flow_input = "-1000, 300, 400, 500, 600"
-        st.experimental_rerun()
+    # Define sliders for inputs with better organization
+    st.markdown("#### Expected Returns")
+    mu_A = st.slider(f'Expected Return of {asset_a_name} (%)', 
+                     min_value=0.0, max_value=50.0, value=8.9, step=0.1,
+                     help="Annual expected return")
+    mu_B = st.slider(f'Expected Return of {asset_b_name} (%)', 
+                     min_value=0.0, max_value=50.0, value=9.2, step=0.1,
+                     help="Annual expected return")
+    
+    st.markdown("#### Risk Parameters")
+    sigma_A = st.slider(f'Standard Deviation of {asset_a_name} (%)', 
+                        min_value=0.0, max_value=50.0, value=7.9, step=0.1,
+                        help="Annual standard deviation (volatility)")
+    sigma_B = st.slider(f'Standard Deviation of {asset_b_name} (%)', 
+                        min_value=0.0, max_value=50.0, value=8.9, step=0.1,
+                        help="Annual standard deviation (volatility)")
+    
+    rho = st.slider('Correlation Coefficient', 
+                    min_value=-1.0, max_value=1.0, value=-0.5, step=0.01,
+                    help="Correlation between the two assets (-1 to 1)")
+    
+    st.markdown('<div class="stock-display">', unsafe_allow_html=True)
+    st.markdown(f'<span class="stock-name">{asset_a_name}</span> <span>Return: {mu_A}% | Risk: {sigma_A}%</span>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="stock-display">', unsafe_allow_html=True)
+    st.markdown(f'<span class="stock-name">{asset_b_name}</span> <span>Return: {mu_B}% | Risk: {sigma_B}%</span>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    if valid_input:
-        # Card for displaying cash flow table
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="subheader">Cash Flow Summary</div>', unsafe_allow_html=True)
-        
-        # Create a table showing periods and cash flows
-        periods = list(range(len(cash_flows)))
-        cf_data = {"Period": periods, "Cash Flow": cash_flows}
-        
-        # Display cash flow table with custom styling
-        st.markdown('<div class="cf-table">', unsafe_allow_html=True)
-        cf_table = "<table width='100%'><thead><tr><th>Period</th><th>Cash Flow</th></tr></thead><tbody>"
-        
-        for i, cf in zip(periods, cash_flows):
-            # Highlight negative values in red, positive in green
-            color = "#DC2626" if cf < 0 else "#16A34A" if cf > 0 else "#000000"
-            cf_table += f"<tr><td style='text-align: center;'>{i}</td><td style='text-align: right; color: {color};'>€{cf:,.2f}</td></tr>"
-        
-        cf_table += "</tbody></table>"
-        st.markdown(cf_table, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Calculate and display initial investment and total cash inflows
-        init_investment = cash_flows[0] if cash_flows[0] < 0 else 0
-        total_inflows = sum(cf for cf in cash_flows if cf > 0)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Initial Investment", f"€{init_investment:,.2f}")
-        with col2:
-            st.metric("Total Cash Inflows", f"€{total_inflows:,.2f}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Card for discount rate controls
+    # Card for visualization controls
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="subheader">Discount Rate Settings</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">Visualization Controls</div>', unsafe_allow_html=True)
     
-    # Slider to select a discount rate range (in percentages)
-    discount_rate_range = st.slider(
-        "Discount Rate Range (%):",
-        min_value=0,
-        max_value=50,
-        value=(5, 30),
-        help="Select the range of discount rates to analyze"
-    )
-    min_rate, max_rate = discount_rate_range
-    min_rate_dec = min_rate / 100.0
-    max_rate_dec = max_rate / 100.0
-    
-    # Add resolution control
+    # Resolution slider
     resolution = st.select_slider(
-        "Chart Resolution:",
-        options=["Low", "Medium", "High"],
-        value="Medium",
-        help="Higher resolution shows more data points but may be slower"
+        "Points on frontier:",
+        options=["Low (50)", "Medium (100)", "High (200)", "Very High (500)"],
+        value="High (200)",
+        help="Higher resolution shows more data points on the frontier curve"
     )
     
-    resolution_points = {"Low": 50, "Medium": 100, "High": 200}
+    resolution_points = {
+        "Low (50)": 50, 
+        "Medium (100)": 100, 
+        "High (200)": 200,
+        "Very High (500)": 500
+    }
     num_points = resolution_points[resolution]
     
+    # Plotting options
+    show_weights = st.checkbox("Show portfolio weights", value=True,
+                              help="Display the weight of Asset A at different points on the frontier")
+    show_cml = st.checkbox("Show Capital Market Line", value=False,
+                          help="Display the Capital Market Line from risk-free rate to tangency portfolio")
+    
+    if show_cml:
+        rf_rate = st.slider("Risk-free rate (%)", 
+                           min_value=0.0, max_value=10.0, value=2.0, step=0.1,
+                           help="Annual risk-free interest rate")
+    else:
+        rf_rate = 2.0  # Default value when not showing CML
+    
+    # Reference points
+    show_reference_portfolios = st.checkbox("Show reference portfolios", value=True,
+                                          help="Display markers for special portfolios like equal-weight")
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Information box
+    # Information box for correlation
     st.markdown('<div class="info-box">', unsafe_allow_html=True)
-    st.markdown("""
-    The NPV is calculated as:
+    st.markdown(f"""
+    **Current Correlation: {rho:.2f}**
     
-    NPV = CF₀ + CF₁/(1+r)¹ + CF₂/(1+r)² + ... + CFₙ/(1+r)ⁿ
+    - Perfect negative correlation: -1.0
+    - No correlation: 0.0
+    - Perfect positive correlation: 1.0
     
-    Where:
-    - CF = Cash flow in period t
-    - r = Discount rate
-    - n = Number of periods
-    
-    The IRR is the discount rate where NPV = 0
+    Diversification benefits are strongest when correlation is negative or low.
     """)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Define a function to compute NPV
-def compute_npv(cash_flows, r):
-    return sum(cf / ((1 + r) ** t) for t, cf in enumerate(cash_flows))
+# Convert sliders back to decimal form for calculations
+mu_A /= 100
+mu_B /= 100
+sigma_A /= 100
+sigma_B /= 100
+rf_rate /= 100
 
-if valid_input:
-    # Generate a set of discount rates to evaluate
-    rates = np.linspace(min_rate_dec, max_rate_dec, num_points)
-    npv_values = [compute_npv(cash_flows, r) for r in rates]
+# Generate parametric minimum-variance frontier
+alphas = np.linspace(0, 1, num_points)
+portfolio_returns = alphas * mu_A + (1 - alphas) * mu_B
+portfolio_stds = np.sqrt(
+    alphas**2 * sigma_A**2 +
+    (1 - alphas)**2 * sigma_B**2 +
+    2 * alphas * (1 - alphas) * rho * sigma_A * sigma_B
+)
+
+# For portfolio weights visualization
+weights_A = alphas
+weights_B = 1 - alphas
+
+# Compute Minimum Variance Portfolio (MVP)
+denominator = sigma_A**2 + sigma_B**2 - 2 * rho * sigma_A * sigma_B
+
+# Handle division by zero
+if abs(denominator) < 1e-10:  # Numerical stability check
+    w_star = 0.5  # Use equal weighting for perfect correlation
+else:
+    w_star = (sigma_B**2 - rho * sigma_A * sigma_B) / denominator
+
+w_star = max(0, min(w_star, 1))  # Ensure no short sales
+w_star_B = 1 - w_star
+
+mvp_return = w_star * mu_A + w_star_B * mu_B
+
+# Correctly calculate MVP standard deviation
+mvp_variance = (w_star**2 * sigma_A**2 + 
+                w_star_B**2 * sigma_B**2 + 
+                2 * w_star * w_star_B * rho * sigma_A * sigma_B)
+
+# Check if variance is non-negative before calculating standard deviation
+if mvp_variance >= 0:
+    mvp_std = np.sqrt(mvp_variance)
+else:
+    mvp_std = 0  # Set to 0 if variance is negative (theoretical minimum)
+
+# Calculate equal-weight portfolio (50/50)
+eq_weight_return = 0.5 * mu_A + 0.5 * mu_B
+eq_weight_variance = (0.5**2 * sigma_A**2 + 
+                     0.5**2 * sigma_B**2 + 
+                     2 * 0.5 * 0.5 * rho * sigma_A * sigma_B)
+eq_weight_std = np.sqrt(eq_weight_variance)
+
+# Calculate the tangency portfolio (if using risk-free rate)
+if abs(mvp_std) > 1e-10:  # Avoid division by zero
+    # Calculate Sharpe ratios for all portfolios on the frontier
+    sharpe_ratios = (portfolio_returns - rf_rate) / portfolio_stds
+    # Find the portfolio with maximum Sharpe ratio
+    max_sharpe_idx = np.nanargmax(sharpe_ratios)
+    tangency_return = portfolio_returns[max_sharpe_idx]
+    tangency_std = portfolio_stds[max_sharpe_idx]
+    tangency_weight_A = alphas[max_sharpe_idx]
+    tangency_weight_B = 1 - tangency_weight_A
+else:
+    tangency_return = mvp_return
+    tangency_std = mvp_std
+    tangency_weight_A = w_star
+    tangency_weight_B = w_star_B
+
+# Split into efficient and inefficient frontiers
+efficient_mask = portfolio_returns >= mvp_return  # Keep only points above or equal to MVP's return
+efficient_returns = portfolio_returns[efficient_mask]
+efficient_stds = portfolio_stds[efficient_mask]
+efficient_weights_A = weights_A[efficient_mask]
+efficient_weights_B = weights_B[efficient_mask]
+
+inefficient_returns = portfolio_returns[~efficient_mask]
+inefficient_stds = portfolio_stds[~efficient_mask]
+inefficient_weights_A = weights_A[~efficient_mask]
+inefficient_weights_B = weights_B[~efficient_mask]
+
+with col2:
+    # Card for the efficient frontier plot
+    st.markdown('<div class="card plot-container">', unsafe_allow_html=True)
     
-    # Calculate the IRR using numpy_financial
-    try:
-        irr = npf.irr(cash_flows)
-        irr_percent = irr * 100
-        irr_valid = True
-    except Exception:
-        irr = None
-        irr_valid = False
+    # Create a plotly figure
+    fig = go.Figure()
     
-    with col_right:
-        # Card for NPV visualization
-        st.markdown('<div class="card plot-container">', unsafe_allow_html=True)
-        
-        # Create the plotly figure
-        fig = go.Figure()
-        
-        # Add the NPV curve
+    # Add efficient frontier
+    hovertemplate = f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>{asset_a_name}: %{{customdata[0]:.1f}}%<br>{asset_b_name}: %{{customdata[1]:.1f}}%<extra></extra>'
+    
+    # Add the efficient frontier
+    fig.add_trace(go.Scatter(
+        x=efficient_stds * 100,
+        y=efficient_returns * 100,
+        mode='lines',
+        name='Efficient Frontier',
+        line=dict(color='#2563EB', width=3),
+        customdata=np.vstack((efficient_weights_A * 100, efficient_weights_B * 100)).T,
+        hovertemplate=hovertemplate
+    ))
+    
+    # Add the inefficient frontier with dashed line
+    fig.add_trace(go.Scatter(
+        x=inefficient_stds * 100,
+        y=inefficient_returns * 100,
+        mode='lines',
+        name='Inefficient Frontier',
+        line=dict(color='#2563EB', width=3, dash='dash'),
+        customdata=np.vstack((inefficient_weights_A * 100, inefficient_weights_B * 100)).T,
+        hovertemplate=hovertemplate
+    ))
+    
+    # Add individual assets
+    fig.add_trace(go.Scatter(
+        x=[sigma_A * 100],
+        y=[mu_A * 100],
+        mode='markers',
+        marker=dict(size=12, color='#10B981', symbol='square'),
+        name=asset_a_name,
+        hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>Asset: {asset_a_name}<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=[sigma_B * 100],
+        y=[mu_B * 100],
+        mode='markers',
+        marker=dict(size=12, color='#F97316', symbol='square'),
+        name=asset_b_name,
+        hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>Asset: {asset_b_name}<extra></extra>'
+    ))
+    
+    # Add minimum variance portfolio point
+    fig.add_trace(go.Scatter(
+        x=[mvp_std * 100],
+        y=[mvp_return * 100],
+        mode='markers',
+        marker=dict(size=14, color='#EF4444', symbol='star'),
+        name='Minimum Variance Portfolio',
+        hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>{asset_a_name}: {w_star*100:.1f}%<br>{asset_b_name}: {(1-w_star)*100:.1f}%<extra></extra>'
+    ))
+    
+    # Add reference portfolios if requested
+    if show_reference_portfolios:
+        # Equal-weight portfolio
         fig.add_trace(go.Scatter(
-            x=rates * 100,
-            y=npv_values,
-            mode='lines',
-            name='NPV Curve',
-            line=dict(color='#3b82f6', width=3),
-            hovertemplate='Rate: %{x:.2f}%<br>NPV: €%{y:.2f}<extra></extra>'
+            x=[eq_weight_std * 100],
+            y=[eq_weight_return * 100],
+            mode='markers',
+            marker=dict(size=10, color='#A855F7', symbol='circle'),
+            name='Equal-Weight Portfolio (50/50)',
+            hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>{asset_a_name}: 50.0%<br>{asset_b_name}: 50.0%<extra></extra>'
+        ))
+    
+    # Add CML if requested
+    if show_cml:
+        # Add risk-free point
+        fig.add_trace(go.Scatter(
+            x=[0],
+            y=[rf_rate * 100],
+            mode='markers',
+            marker=dict(size=10, color='#0D9488', symbol='diamond'),
+            name=f'Risk-Free Rate ({rf_rate*100:.1f}%)',
+            hovertemplate='Risk: 0.00%<br>Return: %{y:.2f}%<extra></extra>'
         ))
         
-        # Add zero line
-        fig.add_shape(
-            type="line",
-            x0=min_rate,
-            y0=0,
-            x1=max_rate,
-            y1=0,
-            line=dict(
-                color="black",
-                width=1,
-                dash="dash",
-            )
+        # Add tangency portfolio
+        fig.add_trace(go.Scatter(
+            x=[tangency_std * 100],
+            y=[tangency_return * 100],
+            mode='markers',
+            marker=dict(size=12, color='#FB923C', symbol='diamond'),
+            name='Tangency Portfolio',
+            hovertemplate=f'Risk: %{{x:.2f}}%<br>Return: %{{y:.2f}}%<br>{asset_a_name}: {tangency_weight_A*100:.1f}%<br>{asset_b_name}: {tangency_weight_B*100:.1f}%<extra></extra>'
+        ))
+        
+        # Add CML line
+        # Extend the line beyond the tangency portfolio for visualization
+        max_std = max(sigma_A, sigma_B) * 1.2
+        cml_std = np.array([0, max_std])
+        cml_return = rf_rate + (tangency_return - rf_rate) / tangency_std * cml_std
+        
+        fig.add_trace(go.Scatter(
+            x=cml_std * 100,
+            y=cml_return * 100,
+            mode='lines',
+            line=dict(color='#FB923C', width=2),
+            name='Capital Market Line',
+            hovertemplate='Risk: %{x:.2f}%<br>Return: %{y:.2f}%<extra></extra>'
+        ))
+    
+    # Add colorful weights gradient if requested
+    if show_weights:
+        # Create a continuous color scale
+        norm_weights = (alphas - min(alphas)) / (max(alphas) - min(alphas))
+        colorscale = [[i, f'rgb({int(255*(1-w))}, {int(150*w+50)}, {int(255*w)})'
+                      ] for i, w in zip(norm_weights, norm_weights)]
+        
+        fig.add_trace(go.Scatter(
+            x=portfolio_stds * 100,
+            y=portfolio_returns * 100,
+            mode='markers',
+            marker=dict(
+                size=6,
+                color=alphas,
+                colorscale='Viridis',
+                colorbar=dict(
+                    title=f'{asset_a_name} Weight',
+                    tickvals=[0, 0.25, 0.5, 0.75, 1],
+                    ticktext=['0%', '25%', '50%', '75%', '100%']
+                ),
+                showscale=True
+            ),
+            name='Portfolio Weights',
+            hoverinfo='skip',
+            showlegend=False
+        ))
+    
+    # Customize the layout
+    max_std = max(max(efficient_stds), max(inefficient_stds, default=0), sigma_A, sigma_B) * 100
+    min_return = min(min(efficient_returns), min(inefficient_returns, default=mu_A), mu_A, mu_B) * 100
+    max_return = max(max(efficient_returns), max(inefficient_returns, default=mu_B), mu_A, mu_B) * 100
+    
+    # Add padding to the axes
+    x_padding = max_std * 0.1
+    y_padding = (max_return - min_return) * 0.1
+    
+    fig.update_layout(
+        title=dict(
+            text="Two-Asset Efficient Frontier",
+            font=dict(size=24, family="Arial, sans-serif", color="#1E3A8A"),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(
+            title="Risk (Standard Deviation, %)",
+            tickformat='.1f',
+            gridcolor='rgba(230, 230, 230, 0.8)',
+            range=[0, max_std + x_padding]
+        ),
+        yaxis=dict(
+            title="Expected Return (%)",
+            tickformat='.1f',
+            gridcolor='rgba(230, 230, 230, 0.8)',
+            range=[min_return - y_padding, max_return + y_padding]
+        ),
+        plot_bgcolor='rgba(248, 250, 252, 0.5)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        hovermode='closest',
+        height=600,
+        margin=dict(l=60, r=40, t=80, b=60),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5
         )
-        
-        # If IRR is computed and lies within the selected discount rate range, mark it
-        if irr_valid and (min_rate <= (irr * 100) <= max_rate):
-            npv_at_irr = compute_npv(cash_flows, irr)
-            
-            # Add IRR point
-            fig.add_trace(go.Scatter(
-                x=[irr * 100],
-                y=[npv_at_irr],
-                mode='markers',
-                marker=dict(size=12, color='red', symbol='circle'),
-                name=f'IRR = {irr_percent:.2f}%',
-                hovertemplate='IRR: %{x:.2f}%<br>NPV: €%{y:.2f}<extra></extra>'
-            ))
-            
-            # Add IRR vertical line
-            fig.add_shape(
-                type="line",
-                x0=irr * 100,
-                y0=min(npv_values) if min(npv_values) < 0 else 0,
-                x1=irr * 100,
-                y1=0,
-                line=dict(
-                    color="red",
-                    width=1,
-                    dash="dash",
-                )
-            )
-            
-            # Add IRR annotation
-            fig.add_annotation(
-                x=irr * 100,
-                y=0,
-                text=f"IRR: {irr_percent:.2f}%",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1,
-                arrowwidth=2,
-                arrowcolor="red",
-                ax=0,
-                ay=-40,
-                bordercolor="red",
-                borderwidth=2,
-                borderpad=4,
-                bgcolor="white",
-                opacity=0.8,
-                font=dict(color="red")
-            )
-        
-        # Customize the layout
-        fig.update_layout(
-            title=dict(
-                text="NPV vs. Discount Rate",
-                font=dict(size=24, family="Arial, sans-serif", color="#1E3A8A"),
-                x=0.5,
-                xanchor='center'
-            ),
-            xaxis=dict(
-                title="Discount Rate (%)",
-                tickformat='.1f',
-                gridcolor='rgba(230, 230, 230, 0.8)'
-            ),
-            yaxis=dict(
-                title="Net Present Value (€)",
-                tickformat=',.2f',
-                gridcolor='rgba(230, 230, 230, 0.8)',
-                zeroline=True,
-                zerolinecolor='rgba(0, 0, 0, 0.2)',
-                zerolinewidth=1
-            ),
-            plot_bgcolor='rgba(248, 250, 252, 0.5)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            hovermode='closest',
-            height=600,
-            margin=dict(l=60, r=40, t=80, b=60)
-        )
-        
-        # Display the chart
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Results section
-        if irr_valid:
-            st.markdown('<div class="results-box">', unsafe_allow_html=True)
-            
-            # Create columns for results
-            res_col1, res_col2 = st.columns(2)
-            
-            with res_col1:
-                st.markdown(f"**Internal Rate of Return (IRR):** {irr_percent:.2f}%")
-                st.markdown("*The discount rate at which NPV equals zero*")
-            
-            with res_col2:
-                # Calculate NPV at a common discount rate (10%)
-                standard_rate = 0.10  # 10%
-                npv_at_standard = compute_npv(cash_flows, standard_rate)
-                st.markdown(f"**NPV at 10% discount rate:** €{npv_at_standard:,.2f}")
-                
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="warning-box">', unsafe_allow_html=True)
-            st.markdown("**No valid IRR found within the given range.**")
-            st.markdown("This usually happens when the cash flows don't change sign (from negative to positive or vice versa).")
-            st.markdown('</div>', unsafe_allow_html=True)
-        
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Results card
+    st.markdown('<div class="results-box">', unsafe_allow_html=True)
+    
+    # Create a grid for metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-value">{mvp_std*100:.2f}%</div>', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">Minimum Risk (MVP)</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-value">{mvp_return*100:.2f}%</div>', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">MVP Return</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-value">{w_star*100:.1f}% / {(1-w_star)*100:.1f}%</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-label">MVP Weights ({asset_a_name}/{asset_b_name})</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    if show_cml:
+        st.markdown('<hr style="margin: 1rem 0;">', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
         
-        # Add additional information about the results
-        with st.expander("📈 NPV Interpretation", expanded=False):
-            st.markdown("""
-            ### Interpreting NPV Results
-            
-            - **Positive NPV**: The investment adds value, and should be accepted
-            - **Negative NPV**: The investment subtracts value, and should be rejected
-            - **Zero NPV**: The investment breaks even
-            
-            ### Decision Rule
-            
-            Accept investment opportunities with positive NPVs at your required rate of return.
-            When comparing mutually exclusive projects, choose the one with the highest NPV.
-            """)
+        with col1:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            sharpe = (tangency_return - rf_rate) / tangency_std if tangency_std > 0 else 0
+            st.markdown(f'<div class="metric-value">{sharpe:.3f}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">Max Sharpe Ratio</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        with st.expander("💰 IRR Interpretation", expanded=False):
+        with col2:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{tangency_return*100:.2f}%</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">Tangency Return</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{tangency_weight_A*100:.1f}% / {tangency_weight_B*100:.1f}%</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-label">Tangency Weights ({asset_a_name}/{asset_b_name})</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Educational content
+    with st.expander("📘 Understanding the Efficient Frontier", expanded=False):
+        st.markdown("""
+        ### Key Concepts
+        
+        **Efficient Frontier**: The set of optimal portfolios that offer the highest expected return for a defined level of risk.
+        
+        **Minimum Variance Portfolio (MVP)**: The portfolio with the lowest possible risk, regardless of return.
+        
+        **Correlation Effects**:
+        - Negative correlation (-1 to 0): Strong diversification benefits
+        - Zero correlation (0): Good diversification 
+        - Positive correlation (0 to +1): Limited diversification benefits
+        
+        ### Portfolio Optimization
+        
+        The weight of asset A in the minimum variance portfolio is given by:
+        
+        w_A = (σ²_B - ρ·σ_A·σ_B) / (σ²_A + σ²_B - 2·ρ·σ_A·σ_B)
+        
+        where:
+        - σ²_A, σ²_B = variances of assets A and B
+        - ρ = correlation coefficient
+        - σ_A, σ_B = standard deviations of assets A and B
+        """)
+    
+    if show_cml:
+        with st.expander("📘 Understanding the Capital Market Line", expanded=False):
             st.markdown("""
-            ### Interpreting IRR Results
+            ### Capital Market Line (CML)
             
-            The IRR is the discount rate that makes the NPV equal to zero. It represents the annualized effective return rate:
+            The CML represents the set of efficient portfolios formed by combining the risk-free asset with the tangency portfolio.
             
-            - If IRR > Required Rate of Return: Accept the project
-            - If IRR < Required Rate of Return: Reject the project
+            **Tangency Portfolio**: The portfolio on the efficient frontier that, when connected to the risk-free rate, creates the line with the steepest slope.
             
-            ### Limitations
+            **Sharpe Ratio**: Measures excess return per unit of risk.
             
-            - Multiple IRRs can exist if cash flows change sign more than once
-            - IRR assumes reinvestment at the IRR rate itself, which may be unrealistic
-            - IRR may give misleading results when comparing mutually exclusive projects
+            Sharpe Ratio = (R_p - R_f) / σ_p
+            
+            where:
+            - R_p = Portfolio return
+            - R_f = Risk-free rate
+            - σ_p = Portfolio standard deviation
+            
+            The tangency portfolio has the highest Sharpe ratio among all portfolios on the efficient frontier.
             """)
 
 # Footer
-st.markdown('<div class="footer">NPV and IRR Visualizer | For educational purposes</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Two-Asset Efficient Frontier Visualizer | For educational purposes</div>', unsafe_allow_html=True)
