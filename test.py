@@ -1,113 +1,89 @@
 import streamlit as st
-import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
+import plotly.express as px
 
-# Page configuration with wide layout and title
+# Original Code (with minimal modifications for compatibility)
+@st.cache_data
+def calculate_pv_and_fv(initial_investment, interest_rate, years, contribution_amount, contribution_frequency):
+    # Convert interest rate to decimal
+    interest_rate = interest_rate / 100
+
+    # Calculate future value
+    if contribution_frequency == "Yearly":
+        future_value = initial_investment * (1 + interest_rate)**years + \
+                       contribution_amount * ((1 + interest_rate)**years - 1) / interest_rate
+    elif contribution_frequency == "Monthly":
+        monthly_interest_rate = interest_rate / 12
+        future_value = initial_investment * (1 + monthly_interest_rate)**(years*12) + \
+                       contribution_amount * ((1 + monthly_interest_rate)**(years*12) - 1) / monthly_interest_rate
+    else: # One time
+        future_value = initial_investment * (1 + interest_rate)**years
+
+    # Calculate present value
+    if contribution_frequency == "Yearly":
+        present_value = initial_investment / (1 + interest_rate)**years + \
+                       contribution_amount * (1 - (1 + interest_rate)**-years) / interest_rate
+    elif contribution_frequency == "Monthly":
+        monthly_interest_rate = interest_rate / 12
+        present_value = initial_investment / (1 + monthly_interest_rate)**(years*12) + \
+                        contribution_amount * (1 - (1 + monthly_interest_rate)**-(years*12)) / monthly_interest_rate
+    else: # One time
+        present_value = initial_investment / (1 + interest_rate)**years
+
+    return present_value, future_value
+
+# --- Streamlit App ---
 st.set_page_config(page_title="PV and FV Calculator", layout="wide")
 
-# Theme toggle in sidebar
-st.sidebar.title("Settings")
-theme = st.sidebar.radio("Select Theme", options=["Light", "Dark"])
+# Sidebar for Inputs
+with st.sidebar:
+    st.header("Calculator Inputs")
+    initial_investment = st.number_input("Initial Investment", value=1000.0, step=100.0)
+    interest_rate = st.slider("Interest Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.1)
+    years = st.slider("Number of Years", min_value=1, max_value=50, value=10)
+    contribution_amount = st.number_input("Yearly Contribution Amount", value=100.0, step=50.0)
+    contribution_frequency = st.selectbox("Contribution Frequency", ["Yearly", "Monthly", "One time"])
 
-# Apply theme colors based on selection
-if theme == "Dark":
-    bg_color = "#0E1117"
-    text_color = "#FAFAFA"
-else:
-    bg_color = "#FFFFFF"
-    text_color = "#000000"
+# Main Panel Calculations
+present_value, future_value = calculate_pv_and_fv(initial_investment, interest_rate, years, contribution_amount, contribution_frequency)
 
-# Sidebar inputs with tooltips
-st.sidebar.header("Input Parameters")
-
-principal = st.sidebar.number_input(
-    "Principal Amount ($)", min_value=0.0, value=1000.0, step=100.0,
-    help="Initial amount of money invested or loaned."
-)
-
-rate = st.sidebar.slider(
-    "Interest Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.1,
-    help="Annual interest rate applied to the principal."
-)
-
-years = st.sidebar.slider(
-    "Number of Years", min_value=1, max_value=50, value=10,
-    help="Duration for which the money is invested or borrowed."
-)
-
-compounding = st.sidebar.selectbox(
-    "Compounding Frequency",
-    options=["Annually", "Semi-Annually", "Quarterly", "Monthly", "Daily"],
-    help="How often the interest is compounded per year."
-)
-
-# Map compounding frequency to number of compounding periods per year
-compounding_map = {
-    "Annually": 1,
-    "Semi-Annually": 2,
-    "Quarterly": 4,
-    "Monthly": 12,
-    "Daily": 365
-}
-
-n = compounding_map[compounding]
-
-payment = st.sidebar.number_input(
-    "Additional Payment per Period ($)", min_value=0.0, value=0.0, step=10.0,
-    help="Additional payment made at each compounding period."
-)
-
-# Calculation function for PV and FV including payments and compounding
-def calculate_values(principal, rate, years, n, payment):
-    r = rate / 100 / n
-    t = years * n
-    if r == 0:
-        fv = principal + payment * t
-        pv = principal + payment * t
-    else:
-        fv = principal * (1 + r) ** t + payment * (((1 + r) ** t - 1) / r)
-        pv = principal / (1 + r) ** t + payment * (1 - (1 + r) ** -t) / r
-    return pv, fv
-
-pv, fv = calculate_values(principal, rate, years, n, payment)
-
-# Layout output in two columns
+# Display Results using Columns
 col1, col2 = st.columns(2)
-
 with col1:
-    st.header("Present Value (PV) 💰")
-    st.markdown(f"<div style='color:{text_color}; font-size:24px;'>${pv:,.2f}</div>", unsafe_allow_html=True)
-    st.caption("Current worth of a future sum or stream of cash flows given the rate of return.")
-
+    st.metric(label="Present Value", value=f"${present_value:,.2f}")
 with col2:
-    st.header("Future Value (FV) 🚀")
-    st.markdown(f"<div style='color:{text_color}; font-size:24px;'>${fv:,.2f}</div>", unsafe_allow_html=True)
-    st.caption("Value of the current asset at a future date based on growth assumptions.")
+    st.metric(label="Future Value", value=f"${future_value:,.2f}")
 
-# Plot future value growth over time
-years_range = list(range(1, years + 1))
-fv_values = [calculate_values(principal, rate, y, n, payment)[1] for y in years_range]
+# --- Visualization ---
+# Generate data for a line chart of investment growth over time
+def generate_growth_data(initial_investment, interest_rate, years, contribution_amount, contribution_frequency):
+    interest_rate = interest_rate / 100
+    data = []
+    investment = initial_investment
+    for year in range(years + 1):
+        data.append(investment)
+        if contribution_frequency == "Yearly" and year > 0:
+            investment += contribution_amount
+        elif contribution_frequency == "Monthly" and year > 0:
+            monthly_interest_rate = interest_rate / 12
+            investment += contribution_amount
+        investment *= (1 + interest_rate) if contribution_frequency == "Yearly" else (1 + interest_rate/12)**12 if contribution_frequency == "Monthly" else (1 + interest_rate)
+    return data
 
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=years_range, y=fv_values, mode='lines+markers', name='Future Value'))
+growth_data = generate_growth_data(initial_investment, interest_rate, years, contribution_amount, contribution_frequency)
+
+# Create DataFrame for Plotly
+df = pd.DataFrame({'Year': range(years + 1), 'Investment Value': growth_data})
+
+# Create the Plotly line chart
+fig = px.line(df, x='Year', y='Investment Value', title='Investment Growth Over Time',
+              labels={'Investment Value': 'Investment Value ($)'})
 fig.update_layout(
-    title="Future Value Growth Over Time",
-    xaxis_title="Years",
-    yaxis_title="Value ($)",
-    plot_bgcolor=bg_color,
-    paper_bgcolor=bg_color,
-    font=dict(color=text_color)
+    xaxis_title="Year",
+    yaxis_title="Investment Value ($)",
+    plot_bgcolor="rgba(0,0,0,0)",  # Transparent background
+    paper_bgcolor="rgba(0,0,0,0)", # Transparent background
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-# Success message
-st.success("Calculation complete! Adjust inputs in the sidebar to update values.")
-
-# Footer with external links
-st.markdown(
-    """
-    ---
-    Developed by Your Name | [GitHub](https://github.com/yourrepo) | [Documentation](https://yourdocslink)
-    """,
-    unsafe_allow_html=True
-)
