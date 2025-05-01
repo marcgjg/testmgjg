@@ -8,7 +8,7 @@ st.set_page_config(page_title="PV and FV Calculator", layout="wide")
 st.sidebar.title("Settings")
 theme = st.sidebar.radio("Select Theme", options=["Light", "Dark"])
 
-# Apply theme colors
+# Apply theme colors based on selection
 if theme == "Dark":
     bg_color = "#0E1117"
     text_color = "#FAFAFA"
@@ -34,34 +34,58 @@ years = st.sidebar.slider(
     help="Duration for which the money is invested or borrowed."
 )
 
-# Use session state to store inputs and results
-if 'calculated' not in st.session_state:
-    st.session_state.calculated = False
+compounding = st.sidebar.selectbox(
+    "Compounding Frequency",
+    options=["Annually", "Semi-Annually", "Quarterly", "Monthly", "Daily"],
+    help="How often the interest is compounded per year."
+)
 
-# Calculate Present Value (PV) and Future Value (FV)
-def calculate_values(principal, rate, years):
-    fv = principal * (1 + rate / 100) ** years
-    pv = principal / ((1 + rate / 100) ** years)
+# Map compounding frequency to number of compounding periods per year
+compounding_map = {
+    "Annually": 1,
+    "Semi-Annually": 2,
+    "Quarterly": 4,
+    "Monthly": 12,
+    "Daily": 365
+}
+
+n = compounding_map[compounding]
+
+payment = st.sidebar.number_input(
+    "Additional Payment per Period ($)", min_value=0.0, value=0.0, step=10.0,
+    help="Additional payment made at each compounding period."
+)
+
+# Calculation function for PV and FV including payments and compounding
+def calculate_values(principal, rate, years, n, payment):
+    r = rate / 100 / n
+    t = years * n
+    if r == 0:
+        fv = principal + payment * t
+        pv = principal + payment * t
+    else:
+        fv = principal * (1 + r) ** t + payment * (((1 + r) ** t - 1) / r)
+        pv = principal / (1 + r) ** t + payment * (1 - (1 + r) ** -t) / r
     return pv, fv
 
-pv, fv = calculate_values(principal, rate, years)
+pv, fv = calculate_values(principal, rate, years, n, payment)
 
-# Organize main page content in columns
+# Layout output in two columns
 col1, col2 = st.columns(2)
 
 with col1:
     st.header("Present Value (PV) 💰")
     st.markdown(f"<div style='color:{text_color}; font-size:24px;'>${pv:,.2f}</div>", unsafe_allow_html=True)
-    st.caption("The current worth of a future sum of money or stream of cash flows given a specified rate of return.")
+    st.caption("Current worth of a future sum or stream of cash flows given the rate of return.")
 
 with col2:
     st.header("Future Value (FV) 🚀")
     st.markdown(f"<div style='color:{text_color}; font-size:24px;'>${fv:,.2f}</div>", unsafe_allow_html=True)
-    st.caption("The value of a current asset at a specified date in the future based on an assumed rate of growth.")
+    st.caption("Value of the current asset at a future date based on growth assumptions.")
 
-# Interactive plot of value growth over years
+# Plot future value growth over time
 years_range = list(range(1, years + 1))
-fv_values = [principal * (1 + rate / 100) ** y for y in years_range]
+fv_values = [calculate_values(principal, rate, y, n, payment)[1] for y in years_range]
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=years_range, y=fv_values, mode='lines+markers', name='Future Value'))
@@ -76,7 +100,7 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# Feedback message
+# Success message
 st.success("Calculation complete! Adjust inputs in the sidebar to update values.")
 
 # Footer with external links
