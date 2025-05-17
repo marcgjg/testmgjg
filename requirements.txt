@@ -3,3 +3,4 @@ numpy
 matplotlib
 plotly
 numpy_financial
+kaleido
