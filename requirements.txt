@@ -3,5 +3,7 @@ pandas>=2.2
 numpy>=1.26
 plotly>=5.20
 requests>=2.31
-openpyxl>=3.1        # lets users upload .xlsx
-streamlit-sortables>=0.3.1   # ✅ Py-3.9 → 3.13 supported
+openpyxl>=3.1           # users can upload .xlsx files
+
+# drag-and-drop component – install from GitHub
+git+https://github.com/andfanilo/streamlit-sortables.git
