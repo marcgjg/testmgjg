@@ -156,7 +156,15 @@ with col1:
             )
         )
     fig.update_layout(
-        scene=dict(
-            xaxis=dict(title="Debt / (Debt + Equity) %", range=list(AXES["debt_pct"])),
-            yaxis=dict(title="Beta", range=list(AXES["beta"])),
-            zaxis=dict(title="Cost of Capital %", range=list(AX
+    scene=dict(
+        xaxis=dict(title="Debt / (Debt + Equity) %",
+                   range=list(AXES["debt_pct"])),
+        yaxis=dict(title="Beta",
+                   range=list(AXES["beta"])),
+        zaxis=dict(title="Cost of Capital %",
+                   range=list(AXES["wacc"])),
+    ),
+    margin=dict(l=0, r=0, t=0, b=0),
+    height=650,
+    legend=dict(orientation="h", y=-0.1),
+)
