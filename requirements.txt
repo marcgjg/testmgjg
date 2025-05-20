@@ -1,7 +1,12 @@
-streamlit>=1.32          # core framework
-streamlit-sortable>=0.4.6
+# --- core libs ---
+streamlit>=1.32
 pandas>=2.2
-numpy>=1.26              # pandas/plotly already depend on it, but list explicitly
+numpy>=1.26
 plotly>=5.20
-requests>=2.31           # for the remote CSV fetch
-openpyxl>=3.1            # so pandas.read_excel works if users upload .xlsx files
+requests>=2.31
+
+# --- uploads (.xlsx) ---
+openpyxl>=3.1      # allow users to upload Excel files
+
+# --- drag-and-drop component ---
+streamlit-sortable==0.4.6
