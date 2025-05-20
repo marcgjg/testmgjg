@@ -1,146 +1,193 @@
 import streamlit as st
+import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import random
+from io import BytesIO
+from urllib.request import urlopen
 
-# ─────────────────  PAGE CONFIG  ───────────────── #
-st.set_page_config(page_title="Capital Structure and WACC",
-                   page_icon="📊", layout="wide")
+# ─────────────────────  CONSTANTS  ───────────────────── #
+HTML_URL  = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/wacc.html"
+XLSX_URL  = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.xls"
+AXES_RANGES = dict(
+    debt_pct=(0, 100),
+    beta=(0, 3),
+    wacc=(0, 20),
+)
+
+# ─────────────────────  PAGE CONFIG  ─────────────────── #
+st.set_page_config(page_title="Industry WACC Guessing Game",
+                   page_icon="🎯", layout="wide")
 st.markdown(
-    '<h1 style="text-align:center; color:#1E3A8A;">📊 Capital Structure & WACC</h1>',
+    '<h1 style="text-align:center; color:#1E3A8A;">🎯 Guess the Industry’s Capital-Market Coordinates</h1>',
     unsafe_allow_html=True,
 )
 
-# ℹ️  ABOUT PANEL ──────────────────────────────── #
-with st.expander("ℹ️ About this tool", expanded=False):
-    st.markdown(
-        """
-        This app shows how a firm’s **weighted average cost of capital (WACC)** varies
-        with leverage when you account for
-        1. the tax benefit of debt (*Modigliani–Miller with taxes*), **and**
-        2. the **expected costs of financial distress**, which push the cost of debt up
-           as the debt ratio rises.
+# ─────────────────────  LOAD DATA  ───────────────────── #
+@st.cache_data(show_spinner="Fetching Damodaran table …")
+def load_industry_data() -> pd.DataFrame:
+    """Return a clean DF with columns: Industry, DebtPct, Beta, WACC."""
+    try:
+        # try the small XLS first – quicker & cleaner
+        df_raw = pd.read_excel(XLSX_URL, sheet_name=0, header=0)
+    except Exception:
+        # fall back to the HTML if the XLS fetch fails
+        df_raw = pd.read_html(HTML_URL, header=0)[0]
 
-        **Assumptions**
+    # keep only rows with needed columns present
+    req_cols = ["Industry Name", "Beta", "Cost of Capital", "D/(D+E)"]
+    df = df_raw.loc[:, req_cols].copy()
 
-        * Base (unlevered) cost of equity: \\(R_u\\)
-        * Base cost of debt at very low leverage: \\(R_d\\)
-        * Corporate tax rate: \\(T_c\\)
-        * Extra yield spread that bondholders demand at 100 % debt: *Distress spread*
-        * Spread grows with leverage as \\(\\text{spread} = \\text{Distress spread}\;(D/V)^n\\)
-
-        The model therefore uses
-
-        \\[
-        \\begin{aligned}
-        R_d(D) & = R_d + \\text{spread}(D)                       \\\\[3pt]
-        R_e(D) & = R_u + \\bigl(R_u - R_d(D)\\bigr)\\frac{D}{E}(1-T_c) \\\\[3pt]
-        \\text{WACC}(D) & = \\tfrac{E}{V} R_e(D) + \\tfrac{D}{V} R_d(D)(1-T_c)
-        \\end{aligned}
-        \\]
-
-        where \\(D/V\\) is the chosen debt ratio and \\(E/V = 1-D/V\\).
-        """,
-        unsafe_allow_html=True,
+    # numeric cleaning – strip %, convert to float
+    df["DebtPct"] = pd.to_numeric(
+        df["D/(D+E)"].str.replace("%", "", regex=False), errors="coerce"
+    )
+    df["Beta"] = pd.to_numeric(df["Beta"], errors="coerce")
+    df["WACC"] = pd.to_numeric(
+        df["Cost of Capital"].str.replace("%", "", regex=False), errors="coerce"
     )
 
-# ─────────── SIDEBAR INPUTS ───────────────────── #
+    df = df.dropna(subset=["DebtPct", "Beta", "WACC"])
+    df.rename(columns={"Industry Name": "Industry"}, inplace=True)
+    return df
+
+data = load_industry_data()   # ~100 ms after first cache
+
+# ─────────────────────  SIDEBAR  ─────────────────────── #
 sb = st.sidebar
-sb.header("Core inputs")
+sb.header("Pick an industry")
+all_industries = data["Industry"].tolist()
 
-r_u_percent = sb.slider("Unlevered cost of equity  rᵤ  (%)", 0.0, 20.0, 10.0, 0.1)
-r_d_base    = sb.slider("Base cost of debt  r_d  (%)",        0.0, 15.0,  5.0, 0.1)
-T_c_percent = sb.slider("Corporate tax rate  T꜀  (%)",        0.0, 50.0, 25.0, 0.5)
+if "current_ind" not in st.session_state:
+    st.session_state.current_ind = random.choice(all_industries)
+if "revealed" not in st.session_state:
+    st.session_state.revealed = False
 
-sb.markdown("### Financial-distress inputs")
-fd_spread   = sb.slider("Extra debt spread at 100 % debt (%-points)",
-                        0.0, 20.0, 6.0, 0.1)
-fd_exp      = sb.slider("Convexity of spread  n  (1–3)",      1.0, 3.0, 2.0, 0.1)
+def new_industry():
+    st.session_state.current_ind = random.choice(all_industries)
+    st.session_state.revealed = False
+
+sb.button("🎲 New random industry", on_click=new_industry)
+chosen_industry = sb.selectbox("…or choose one yourself",
+                               all_industries,
+                               index=all_industries.index(st.session_state.current_ind),
+                               key="ind_select")
+st.session_state.current_ind = chosen_industry
 
 sb.markdown("---")
-selected_debt = sb.slider("Debt ratio (% of total capital)",
-                          0, 100, 50, 1)
+sb.markdown("### Your guess")
 
-# ─────────── COMPUTATIONS ─────────────────────── #
-T       = T_c_percent / 100.0
-d_pct   = np.arange(0, 101)            # 0 … 100 %
-d_frac  = d_pct / 100.0                # 0 … 1
+guess_debt = sb.slider("Debt / (Debt + Equity) %", *AXES_RANGES["debt_pct"], 50)
+guess_beta = sb.slider("Beta", *AXES_RANGES["beta"], 1.0, 0.01)
+guess_wacc = sb.slider("Cost of Capital %", *AXES_RANGES["wacc"], 8.0, 0.05)
 
-# Cost of debt including distress spread
-spread_percent = fd_spread * d_frac**fd_exp
-R_d = r_d_base + spread_percent
+if sb.button("Check guess"):
+    st.session_state.revealed = True
 
-# Avoid division-by-zero when D/V = 1
-D_over_E = np.where(d_frac < 1, d_frac / (1 - d_frac + 1e-9), np.inf)
+# ─────────────────────  MAIN PANEL  ─────────────────── #
+col1, col2 = st.columns([2, 1])
 
-# Cost of equity under MM with the leverage-adjusted R_d
-R_e = np.where(
-    d_frac < 1,
-    r_u_percent + (r_u_percent - R_d) * D_over_E * (1 - T),
-    np.nan,                     # undefined at 100 % debt
-)
+with col1:
+    st.subheader("3-D Industry Map")
+    fig = go.Figure()
 
-# WACC for each leverage level
-WACC_percent = np.where(
-    d_frac < 1,
-    (1 - d_frac) * R_e + d_frac * R_d * (1 - T),
-    R_d * (1 - T),              # when equity → 0
-)
-
-# Optimal debt ratio (first global minimum)
-min_idx     = int(np.nanargmin(WACC_percent))
-opt_d_pct   = int(d_pct[min_idx])
-min_wacc    = WACC_percent[min_idx]
-
-# WACC at the debt ratio chosen on the slider
-d_sel_frac  = selected_debt / 100.0
-r_d_sel     = r_d_base + fd_spread * d_sel_frac**fd_exp
-if selected_debt < 100:
-    r_e_sel = r_u_percent + (r_u_percent - r_d_sel) * \
-              d_sel_frac / (1 - d_sel_frac) * (1 - T)
-    wacc_selected = (1 - d_sel_frac) * r_e_sel + d_sel_frac * r_d_sel * (1 - T)
-else:                               # 100 % debt
-    wacc_selected = r_d_sel * (1 - T)
-
-# ─────────── PLOT ─────────────────────────────── #
-fig = go.Figure()
-
-fig.add_trace(
-    go.Scatter(
-        x=d_pct,
-        y=WACC_percent,
-        mode="lines",
-        name="WACC",
-        line=dict(color="black", width=3),
+    # grey markers for all industries
+    fig.add_trace(
+        go.Scatter3d(
+            x=data["DebtPct"],
+            y=data["Beta"],
+            z=data["WACC"],
+            mode="markers",
+            marker=dict(size=4, color="#d1d5db"),   # Tailwind slate-300
+            name="All industries",
+            hovertemplate=(
+                "<b>%{text}</b><br>Debt %%: %{x:.1f}<br>"
+                "Beta: %{y:.2f}<br>WACC %%: %{z:.2f}"
+            ),
+            text=data["Industry"],
+        )
     )
-)
 
-fig.add_vline(
-    x=opt_d_pct,
-    line=dict(color="grey", dash="dash"),
-    annotation=dict(text="Optimal debt", textangle=-90,
-                    showarrow=False, yshift=10),
-)
+    # student guess (always plotted)
+    fig.add_trace(
+        go.Scatter3d(
+            x=[guess_debt], y=[guess_beta], z=[guess_wacc],
+            mode="markers+text",
+            marker=dict(size=6, symbol="diamond", color="#3b82f6"),  # Tailwind blue-500
+            text=["Your guess"],
+            textposition="top center",
+            name="Your guess",
+        )
+    )
 
-fig.update_layout(
-    xaxis_title="Debt ratio (%)",
-    yaxis_title="WACC (%)",
-    hovermode="x unified",
-    font=dict(size=16),
-    height=600,
-    legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"),
-    margin=dict(l=80, r=80, t=30, b=40),
-)
+    # actual point (only if revealed)
+    if st.session_state.revealed:
+        actual = data.set_index("Industry").loc[st.session_state.current_ind]
+        fig.add_trace(
+            go.Scatter3d(
+                x=[actual["DebtPct"]], y=[actual["Beta"]], z=[actual["WACC"]],
+                mode="markers+text",
+                marker=dict(size=6, symbol="circle", color="#ef4444"),  # red-500
+                text=["Actual"],
+                textposition="bottom center",
+                name="Actual",
+            )
+        )
 
-st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="Debt / (Debt + Equity) %",
+            yaxis_title="Beta",
+            zaxis_title="Cost of Capital %",
+            xaxis=dict(range=list(AXES_RANGES["debt_pct"])),
+            yaxis=dict(range=list(AXES_RANGES["beta"])),
+            zaxis=dict(range=list(AXES_RANGES["wacc"])),
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=650,
+        legend=dict(orientation="h", y=-0.1),
+    )
 
-# ───────────  DOWNLOAD SVG BUTTON ─────────────── #
-svg_bytes = fig.to_image(format="svg")        # needs plotly-kaleido
-st.download_button("⬇️ Download SVG", svg_bytes,
-                   file_name="wacc_plot.svg", mime="image/svg+xml")
+    st.plotly_chart(fig, use_container_width=True)
 
-# ─────────── SUMMARY ──────────────────────────── #
+with col2:
+    st.subheader("Your task")
+    st.write(f"**Target industry:** **{st.session_state.current_ind}**")
+
+    if not st.session_state.revealed:
+        st.info(
+            "Pick the three slider values you believe best describe this industry "
+            "and click **Check guess** when ready."
+        )
+    else:
+        actual = data.set_index("Industry").loc[st.session_state.current_ind]
+        # Euclidean distance in normalised space
+        dx = guess_debt - actual["DebtPct"]
+        dy = guess_beta - actual["Beta"]
+        dz = guess_wacc - actual["WACC"]
+        dist = np.sqrt(
+            (dx / (AXES_RANGES["debt_pct"][1]))**2 +
+            (dy / (AXES_RANGES["beta"][1]))**2 +
+            (dz / (AXES_RANGES["wacc"][1]))**2
+        )
+        st.success(
+            f"**Actual values**\n\n"
+            f"* Debt ratio: **{actual['DebtPct']:.1f}%**\n"
+            f"* Beta: **{actual['Beta']:.2f}**\n"
+            f"* WACC: **{actual['WACC']:.2f}%**"
+        )
+        st.write(f"Your absolute errors: ")
+        st.write(f"* Debt ratio error = {abs(dx):.1f} pp")
+        st.write(f"* Beta error = {abs(dy):.2f}")
+        st.write(f"* WACC error = {abs(dz):.2f} pp")
+        st.write(f"Overall normalised distance ≈ **{dist:.3f}**")
+
+        st.button("Try another industry →", on_click=new_industry)
+
+# ─────────────────────  FOOTER  ─────────────────────── #
 st.markdown(
-    f"**Optimal capital structure:** **{opt_d_pct}% debt**, "
-    f"minimum **WACC = {min_wacc:.2f}%**"
+    '<div style="text-align:center; padding-top:1rem; color:#6B7280;">'
+    'Dataset: Prof. Aswath Damodaran, NYU Stern (Jan 2025) '
+    '| App by ChatGPT</div>',
+    unsafe_allow_html=True,
 )
-st.write(f"At {selected_debt}% debt, WACC = **{wacc_selected:.2f}%**.")
