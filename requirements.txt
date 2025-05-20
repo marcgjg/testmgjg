@@ -1,12 +1,12 @@
 # --- core libs ---
-streamlit
-pandas
-numpy
-plotly
-requests
+streamlit>=1.32
+pandas>=2.2
+numpy>=1.26
+plotly>=5.20
+requests>=2.31
 
 # --- uploads (.xlsx) ---
-openpyxl      # allow users to upload Excel files
+openpyxl>=3.1      # allow users to upload Excel files
 
 # --- drag-and-drop component ---
-streamlit-sortable
+streamlit-sortable==0.4.6
