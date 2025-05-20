@@ -1,3 +1,7 @@
+# streamlit_app.py
+# -------------------------------------------------------
+#  🎯  Guess the Industry’s Capital-Market Coordinates
+# -------------------------------------------------------
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,8 +10,9 @@ import random
 import io
 import requests
 
-# ─────────────────────  DATA SOURCES  ───────────────────── #
-CSV_URL = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
+# ─────────────── CONSTANTS ──────────────── #
+CSV_URL   = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
+# tiny fallback sample – extend / replace with full table if you like
 SAMPLE_CSV = """
 Industry Name,Beta,Cost of Capital,D/(D+E)
 Advertising,1.51,8.79%,18.55%
@@ -16,14 +21,20 @@ Air Transport,1.44,8.77%,37.06%
 Alcoholic Beverages,0.74,6.14%,16.24%
 Auto & Truck,1.19,7.83%,26.49%
 Bank (Money Center),1.33,8.38%,86.93%
-"""  # ← extend/replace with full table if desired
+"""
 
-AXES = dict(debt_pct=(0, 100), beta=(0, 3), wacc=(0, 20))
+AXES = dict(
+    debt_pct=(0, 100),          # x-axis  (int)
+    beta=(0.0, 3.0),            # y-axis  (float)
+    wacc=(0.0, 20.0),           # z-axis  (float)
+)
 
-# ─────────────────────  HELPERS  ───────────────────── #
+# ─────────────── DATA HELPERS ─────────────── #
 def clean(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Return tidy DataFrame with Industry · DebtPct · Beta · WACC."""
     req = ["Industry Name", "Beta", "Cost of Capital", "D/(D+E)"]
     df = df_raw.loc[:, req].copy()
+
     df["DebtPct"] = (
         df["D/(D+E)"].astype(str).str.replace("%", "", regex=False)
         .str.replace(",", "", regex=False).astype(float)
@@ -37,104 +48,126 @@ def clean(df_raw: pd.DataFrame) -> pd.DataFrame:
     df.rename(columns={"Industry Name": "Industry"}, inplace=True)
     return df
 
-@st.cache_data(show_spinner="Fetching Damodaran CSV …", ttl=24*3600)
-def try_remote_csv() -> pd.DataFrame | None:
+@st.cache_data(show_spinner="Downloading Damodaran CSV …", ttl=24 * 3600)
+def fetch_remote_csv() -> pd.DataFrame | None:
+    """Attempt to download the CSV. Return None on failure."""
     try:
-        r = requests.get(CSV_URL, timeout=10)
-        r.raise_for_status()
-        return clean(pd.read_csv(io.StringIO(r.text)))
+        resp = requests.get(CSV_URL, timeout=10)
+        resp.raise_for_status()
+        return clean(pd.read_csv(io.StringIO(resp.text)))
     except Exception:
         return None
 
-def load_industry_data(uploaded_file) -> pd.DataFrame:
-    # 1️⃣ remote if available
-    df = try_remote_csv()
-    if df is not None:
-        return df, "remote CSV"
+def load_industry_data(uploaded_file) -> tuple[pd.DataFrame, str]:
+    """
+    1️⃣ remote CSV if reachable,
+    2️⃣ user-uploaded file,
+    3️⃣ built-in sample.
+    """
+    df_remote = fetch_remote_csv()
+    if df_remote is not None:
+        return df_remote, "remote CSV"
 
-    # 2️⃣ user-supplied file
+    # user-supplied file
     if uploaded_file is not None:
-        ext = uploaded_file.name.lower()
-        if ext.endswith(".csv"):
+        name = uploaded_file.name.lower()
+        if name.endswith(".csv"):
             df_up = pd.read_csv(uploaded_file)
-        elif ext.endswith((".xls", ".xlsx")):
+        elif name.endswith((".xls", ".xlsx")):
             df_up = pd.read_excel(uploaded_file, sheet_name=0)
         else:
-            st.error("Unsupported file type. Please upload CSV or Excel.")
+            st.error("Please upload CSV or Excel (.xls/.xlsx).")
             st.stop()
         return clean(df_up), "uploaded file"
 
-    # 3️⃣ built-in mini sample
+    # built-in tiny sample
     df_sample = pd.read_csv(io.StringIO(SAMPLE_CSV))
     return clean(df_sample), "built-in sample"
 
-# ─────────────────────  UI LAYOUT  ───────────────────── #
-st.set_page_config("Industry WACC Guess", "🎯", layout="wide")
+
+# ─────────────── PAGE CONFIG ─────────────── #
+st.set_page_config(page_title="Industry WACC Guessing Game",
+                   page_icon="🎯", layout="wide")
 st.markdown(
     '<h1 style="text-align:center; color:#1E3A8A;">🎯 Guess the Industry’s Capital-Market Coordinates</h1>',
     unsafe_allow_html=True,
 )
 
-uploaded = st.sidebar.file_uploader(
-    "⬆️ Upload Damodaran CSV/XLS (optional)", type=["csv", "xls", "xlsx"]
+# ─────────────── DATA LOAD ──────────────── #
+uploaded_file = st.sidebar.file_uploader(
+    "⬆️ Upload Damodaran CSV/XLS (optional)",
+    type=["csv", "xls", "xlsx"]
 )
-data, source_note = load_industry_data(uploaded)
+data, data_source = load_industry_data(uploaded_file)
+st.sidebar.caption(f"Data source: {data_source}")
 
-st.sidebar.caption(f"Data source: {source_note}")
-
-# ────── game state ──────
-all_inds = data["Industry"].tolist()
-if "current" not in st.session_state:
-    st.session_state.current = random.choice(all_inds)
+# ─────────────── SESSION STATE ───────────── #
+all_industries = data["Industry"].tolist()
+if "current_ind" not in st.session_state:
+    st.session_state.current_ind = random.choice(all_industries)
 if "revealed" not in st.session_state:
     st.session_state.revealed = False
 
-
-def choose_new():
-    st.session_state.current = random.choice(all_inds)
+def new_random_industry():
+    st.session_state.current_ind = random.choice(all_industries)
     st.session_state.revealed = False
 
+# ─────────────── SIDEBAR ─────────────── #
+sb = st.sidebar
+sb.button("🎲 New random industry", on_click=new_random_industry)
 
-st.sidebar.button("🎲 New random industry", on_click=choose_new)
-picked = st.sidebar.selectbox(
+picked = sb.selectbox(
     "…or choose one yourself",
-    all_inds,
-    index=all_inds.index(st.session_state.current),
-    key="ind_sel",
+    all_industries,
+    index=all_industries.index(st.session_state.current_ind),
+    key="ind_select"
 )
-st.session_state.current = picked
+st.session_state.current_ind = picked
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Your guess")
-g_debt = st.sidebar.slider("Debt / (Debt + Equity) %", *AXES["debt_pct"], 50)
-g_beta = st.sidebar.slider("Beta", *AXES["beta"], 1.0, 0.01)
-g_wacc = st.sidebar.slider("Cost of Capital %", *AXES["wacc"], 8.0, 0.05)
+sb.markdown("---")
+sb.markdown("### Your guess")
 
-if st.sidebar.button("Check guess"):
+# Debt slider (all int args)
+g_debt = sb.slider("Debt / (Debt + Equity) %",
+                   AXES["debt_pct"][0], AXES["debt_pct"][1],
+                   50, 1)
+
+# Beta slider (all float args)
+beta_min, beta_max = AXES["beta"]
+g_beta = sb.slider("Beta",
+                   float(beta_min), float(beta_max),
+                   1.0, 0.01)
+
+# WACC slider (all float args)
+wacc_min, wacc_max = AXES["wacc"]
+g_wacc = sb.slider("Cost of Capital %",
+                   float(wacc_min), float(wacc_max),
+                   8.0, 0.05)
+
+if sb.button("Check guess"):
     st.session_state.revealed = True
 
-# ─────────── 3-D plot ───────────
-col1, col2 = st.columns([2, 1])
+# ─────────────── MAIN LAYOUT ─────────────── #
+left, right = st.columns([2, 1])
 
-with col1:
+# ---------- 3-D Scatter ---------- #
+with left:
     st.subheader("3-D Industry Map")
     fig = go.Figure()
 
+    # all industries · grey dots
     fig.add_trace(
         go.Scatter3d(
-            x=data["DebtPct"],
-            y=data["Beta"],
-            z=data["WACC"],
+            x=data["DebtPct"], y=data["Beta"], z=data["WACC"],
             mode="markers",
             marker=dict(size=4, color="#d1d5db"),
             text=data["Industry"],
-            hovertemplate=(
-                "<b>%{text}</b><br>Debt %%: %{x:.1f}<br>"
-                "Beta: %{y:.2f}<br>WACC %%: %{z:.2f}"
-            ),
+            hovertemplate="<b>%{text}</b><br>Debt %%: %{x:.1f}<br>"
+                          "Beta: %{y:.2f}<br>WACC %%: %{z:.2f}",
             name="All industries",
         )
     )
+    # student's guess · blue diamond
     fig.add_trace(
         go.Scatter3d(
             x=[g_debt], y=[g_beta], z=[g_wacc],
@@ -144,27 +177,69 @@ with col1:
             name="Your guess",
         )
     )
+    # actual point · red dot (after reveal)
     if st.session_state.revealed:
-        act = data.set_index("Industry").loc[st.session_state.current]
+        actual = data.set_index("Industry").loc[st.session_state.current_ind]
         fig.add_trace(
             go.Scatter3d(
-                x=[act["DebtPct"]], y=[act["Beta"]], z=[act["WACC"]],
+                x=[actual["DebtPct"]], y=[actual["Beta"]], z=[actual["WACC"]],
                 mode="markers+text",
                 marker=dict(size=6, symbol="circle", color="#ef4444"),
                 text=["Actual"], textposition="bottom center",
                 name="Actual",
             )
         )
+
     fig.update_layout(
-    scene=dict(
-        xaxis=dict(title="Debt / (Debt + Equity) %",
-                   range=list(AXES["debt_pct"])),
-        yaxis=dict(title="Beta",
-                   range=list(AXES["beta"])),
-        zaxis=dict(title="Cost of Capital %",
-                   range=list(AXES["wacc"])),
-    ),
-    margin=dict(l=0, r=0, t=0, b=0),
-    height=650,
-    legend=dict(orientation="h", y=-0.1),
+        scene=dict(
+            xaxis=dict(title="Debt / (Debt + Equity) %",
+                       range=list(AXES["debt_pct"])),
+            yaxis=dict(title="Beta",
+                       range=list(AXES["beta"])),
+            zaxis=dict(title="Cost of Capital %",
+                       range=list(AXES["wacc"])),
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=650,
+        legend=dict(orientation="h", y=-0.1),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------- Feedback panel ---------- #
+with right:
+    st.subheader("Your task")
+    st.write(f"**Target industry:** **{st.session_state.current_ind}**")
+
+    if not st.session_state.revealed:
+        st.info("Adjust the sliders and press **Check guess**.")
+    else:
+        act = data.set_index("Industry").loc[st.session_state.current_ind]
+        dx, dy, dz = (g_debt - act["DebtPct"],
+                      g_beta - act["Beta"],
+                      g_wacc - act["WACC"])
+        dist = np.sqrt(
+            (dx / AXES["debt_pct"][1]) ** 2 +
+            (dy / AXES["beta"][1]) ** 2 +
+            (dz / AXES["wacc"][1]) ** 2
+        )
+        st.success(
+            f"**Actual values**\n\n"
+            f"* Debt ratio: **{act['DebtPct']:.1f}%**\n"
+            f"* Beta: **{act['Beta']:.2f}**\n"
+            f"* WACC: **{act['WACC']:.2f}%**"
+        )
+        st.write(
+            f"Absolute errors → "
+            f"Debt {abs(dx):.1f} pp, "
+            f"Beta {abs(dy):.2f}, "
+            f"WACC {abs(dz):.2f} pp"
+        )
+        st.write(f"Normalised distance ≈ **{dist:.3f}**")
+        st.button("Try another industry →", on_click=new_random_industry)
+
+# ---------- Footer ---------- #
+st.markdown(
+    '<div style="text-align:center; color:#6B7280; padding-top:1rem;">'
+    'Damodaran dataset | App by ChatGPT</div>',
+    unsafe_allow_html=True,
 )
