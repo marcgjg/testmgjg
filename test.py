@@ -1,40 +1,34 @@
+# streamlit_app.py  –  Industry-guessing version
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import requests
-import random
+import requests, random
 from io import StringIO
 
-# ───────────────────────────── App setup ────────────────────────────── #
-st.set_page_config(page_title="Industry WACC Matching Game",
-                   page_icon="🎲",
-                   layout="wide")
-st.title("🎲 Industry WACC Matching Game")
+st.set_page_config(page_title="Industry Guessing Game", page_icon="🏭", layout="wide")
+st.title("🏭 Industry WACC Guessing Game")
 st.write(
-    "Match each letter-labelled point to the correct industry name. "
-    "Score **+1** for every correct match and **−0.5** for every wrong one. "
-    "If your score drops below zero, you lose; if you match them all, you win!"
+    "Each point shows an industry's **Beta**, **Debt ratio** and **WACC**. "
+    "Match every letter-labelled point to the correct **industry name**. "
+    "Score **+1** for a correct match, **–0.5** for a wrong one."
 )
 
-# ─────────────────────────── Data functions ─────────────────────────── #
-DAMODARAN_URL = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/wacc.html"
+# ─────────────── Fetch Damodaran data (cache 24 h) ──────────────── #
+URL = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/wacc.html"
 
-@st.cache_data(show_spinner="Fetching Damodaran data …", ttl=24*3600)
-def load_damodaran() -> pd.DataFrame | None:
+@st.cache_data(ttl=24*3600, show_spinner="Loading Damodaran table …")
+def fetch_damodaran():
     try:
-        html = requests.get(DAMODARAN_URL, timeout=10)
-        html.raise_for_status()
-        tables = pd.read_html(html.text)
-        df = tables[0]
+        html = requests.get(URL, timeout=10).text
+        df = pd.read_html(html)[0]
         df = df[~df["Industry Name"].str.contains("Total Market", na=False)]
-        # Clean % signs
         for col in ["Cost of Capital", "D/(D+E)"]:
             df[col] = df[col].astype(str).str.rstrip("%").astype(float)
         return df
     except Exception:
         return None
 
-# Hard-coded fallback (Jan-2025 snapshot — first 50 rows for brevity)
+# fallback snapshot (first 50 industries for brevity)
 FALLBACK_CSV = """Industry Name,Beta,Cost of Capital,D/(D+E)
 Advertising,1.34,9.22,20.76
 Aerospace/Defense,0.90,7.68,18.56
@@ -87,119 +81,89 @@ Power,0.54,5.54,44.55
 Precious Metals,1.23,9.09,15.89
 Publishing & Newspapers,0.64,6.63,22.30
 R.E.I.T.,0.95,6.62,45.50
-Retail (Automotive),1.35,8.39,33.51
 """
+df = fetch_damodaran() or pd.read_csv(StringIO(FALLBACK_CSV))
 
-df_live = load_damodaran()
-df_data = df_live if df_live is not None else pd.read_csv(StringIO(FALLBACK_CSV))
+# ─────────────── Sidebar controls ─────────────── #
+st.sidebar.header("Round settings")
+n_max = min(10, len(df))
+n_ind = st.sidebar.slider("Industries in this round", 2, n_max, 5)
+new_round = st.sidebar.button("Start / Restart round")
 
-# ─────────────────────────── Sidebar controls ────────────────────────── #
-st.sidebar.header("Game settings")
-n_max = min(10, len(df_data))
-n_choice = st.sidebar.slider("Industries per round", 2, n_max, 5)
-start_round = st.sidebar.button("Start new round")
+# ─────────────── Session defaults ─────────────── #
+defaults = dict(active=False, finished=False, score=0.0,
+                letters=[], mapping={}, subset=pd.DataFrame())
+for k, v in defaults.items():
+    st.session_state.setdefault(k, v)
 
-# ─────────────────────────── Session defaults ────────────────────────── #
-if "round_active" not in st.session_state:
-    st.session_state.round_active = False
-    st.session_state.score = 0.0
-    st.session_state.letters = []
-    st.session_state.mapping = {}
-    st.session_state.subset = pd.DataFrame()
-    st.session_state.finished = False
-
-# ─────────────────────── Start / reset round logic ───────────────────── #
-if start_round:
-    subset = df_data.sample(n_choice, random_state=random.randint(0, 999999)).reset_index(drop=True)
+# ─────────────── Start a new round ─────────────── #
+if new_round:
+    subset = df.sample(n_ind, random_state=random.randint(0, 1_000_000)).reset_index(drop=True)
     letters = [chr(65+i) for i in range(len(subset))]
     mapping = {letters[i]: subset.at[i, "Industry Name"] for i in range(len(subset))}
-    st.session_state.round_active = True
-    st.session_state.finished = False
-    st.session_state.letters = letters
-    st.session_state.mapping = mapping
-    st.session_state.subset = subset
-    # clear previous guesses
+    st.session_state.update(
+        active=True, finished=False, letters=letters,
+        mapping=mapping, subset=subset
+    )
+    # reset guesses
     for k in list(st.session_state.keys()):
         if k.startswith("guess_"):
             del st.session_state[k]
 
-# ───────────────────────────── Active round UI ───────────────────────── #
-if st.session_state.round_active and not st.session_state.finished:
-    sub = st.session_state.subset
+# ─────────────── Game UI ─────────────── #
+if st.session_state.active:
     letters = st.session_state.letters
+    data = st.session_state.subset
 
-    st.subheader(f"Current score: {st.session_state.score:.2f}")
+    st.subheader(f"Score: {st.session_state.score:.2f}")
 
-    # 3-D scatter plot
+    # 3-D scatter of Beta, Debt %, WACC
     fig = go.Figure(go.Scatter3d(
-        x=sub["Beta"],
-        y=sub["D/(D+E)"],
-        z=sub["Cost of Capital"],
+        x=data["Beta"], y=data["D/(D+E)"], z=data["Cost of Capital"],
         mode="markers+text",
-        text=letters,
-        textposition="top center",
+        text=letters, textposition="top center",
         marker=dict(size=6, color="#1f77b4")
     ))
     fig.update_layout(
         scene=dict(
             xaxis_title="Beta",
             yaxis_title="Debt ratio (%)",
-            zaxis_title="WACC (%)"
+            zaxis_title="WACC (%)",
         ),
         margin=dict(l=0, r=0, t=0, b=0)
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Build dropdown options (shuffle WACC values)
-    wacc_vals = list(sub["Cost of Capital"])
-    options = random.sample(wacc_vals, len(wacc_vals))
-    opts_display = ["– pick –"] + [f"{v:.2f} %" for v in options]
+    if not st.session_state.finished:
+        with st.form("match_form"):
+            st.write("Choose the **industry name** for each point:")
+            opts = data["Industry Name"].tolist()
+            random.shuffle(opts)
+            opts_disp = ["– pick –"] + opts
+            for L in letters:
+                st.selectbox(f"Point {L}", opts_disp, key=f"guess_{L}")
+            submitted = st.form_submit_button("Submit guesses")
 
-    with st.form("match_form"):
-        st.write("Select the **WACC (%)** for each industry:")
-        for i, row in sub.iterrows():
-            label = f"{letters[i]} — {row['Industry Name']} " \
-                    f"(Beta {row['Beta']:.2f}, Debt {row['D/(D+E)']:.1f}%)"
-            st.selectbox(label, opts_display, key=f"guess_{letters[i]}")
-        submitted = st.form_submit_button("Submit answers")
-
-    if submitted:
-        guesses = {letters[i]: st.session_state[f"guess_{letters[i]}"] for i in range(len(letters))}
-        if "– pick –" in guesses.values():
-            st.warning("Choose a WACC for every industry before submitting.")
-        else:
-            correct = wrong = 0
-            feedback = []
-            for i, L in enumerate(letters):
-                true_val = sub.at[i, "Cost of Capital"]
-                guess_val = float(guesses[L].split()[0])
-                if abs(guess_val - true_val) < 1e-6:
-                    correct += 1
-                    feedback.append(f"✅ {sub.at[i,'Industry Name']}: correct!")
-                else:
-                    wrong += 1
-                    feedback.append(
-                        f"❌ {sub.at[i,'Industry Name']}: you picked {guess_val:.2f} %, "
-                        f"true is {true_val:.2f} %"
-                    )
-            # Scoring: +1 correct, –0.5 wrong
-            st.session_state.score += correct - 0.5 * wrong
-
-            if correct == len(letters):
-                st.success(f"🎉 All correct! Round complete. "
-                           f"Score now {st.session_state.score:.2f}")
-                st.session_state.finished = True
-            elif st.session_state.score < 0:
-                st.error(f"💀 Score below zero. Game over! Final score "
-                         f"{st.session_state.score:.2f}")
-                st.session_state.finished = True
+        if submitted:
+            guesses = {L: st.session_state[f"guess_{L}"] for L in letters}
+            if "– pick –" in guesses.values():
+                st.warning("Select an industry for every point.")
             else:
-                st.info(f"Correct: {correct} · Wrong: {wrong} "
-                        f"→ Score {st.session_state.score:.2f}. Try again!")
-            with st.expander("See details", expanded=False):
-                for line in feedback:
-                    st.write(line)
+                correct = sum(guesses[L] == st.session_state.mapping[L] for L in letters)
+                wrong = len(letters) - correct
+                st.session_state.score += correct - 0.5 * wrong
 
-# ───────────────────────── Round finished notice ─────────────────────── #
-if st.session_state.round_active and st.session_state.finished:
-    st.info("Start a new round from the sidebar when you're ready!")
+                if correct == len(letters):
+                    st.success(f"🎉 All correct! Final score {st.session_state.score:.2f}")
+                    st.session_state.finished = True
+                elif st.session_state.score < 0:
+                    st.error(f"💀 Score < 0. Game over. Final score {st.session_state.score:.2f}")
+                    st.session_state.finished = True
+                else:
+                    st.info(
+                        f"Correct: {correct} · Wrong: {wrong} "
+                        f"→ Score {st.session_state.score:.2f}. Keep trying!"
+                    )
+
+if not st.session_state.active:
+    st.info("Pick settings in the sidebar and click **Start / Restart round**.")
