@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import io
 
-# --- Load Data from Damodaran WACC table, with fallback to Jan 2025 snapshot ---
+# Data source URLs and fallback snapshot (January 2025)
 CSV_URL = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
-# Hardcoded snapshot of Damodaran's January 2025 WACC data (Industry, Beta, WACC%, Debt%)
 SAMPLE_CSV = """Industry Name,Beta,Cost of Capital,D/(D+E)
 Advertising,1.34,9.22%,20.76%
 Aerospace/Defense,0.90,7.68%,18.56%
@@ -101,178 +100,203 @@ Transportation (Railroads),0.99,7.75%,22.11%
 Trucking,1.10,8.39%,18.64%
 Utility (General),0.39,5.20%,43.84%
 Utility (Water),0.68,6.15%,36.96%"""
-try:
-    # Try to read directly from the online CSV
-    df = pd.read_csv(CSV_URL)
-except Exception:
-    # Fallback to the hardcoded snapshot
-    df = pd.read_csv(io.StringIO(SAMPLE_CSV))
 
-# Convert percentage strings to numeric floats (e.g., "9.22%" -> 9.22)
-df["Cost of Capital"] = df["Cost of Capital"].str.rstrip("%").astype(float)
-df["D/(D+E)"] = df["D/(D+E)"].str.rstrip("%").astype(float)
+# Cache data loading to avoid repeated fetches
+@st.cache_data
+def load_industry_data():
+    try:
+        df = pd.read_csv(CSV_URL)
+    except Exception:
+        df = pd.read_csv(io.StringIO(SAMPLE_CSV))
+    # Drop aggregate rows if present
+    df = df[~df["Industry Name"].str.startswith("Total Market")]
+    # Ensure numeric columns (remove % and convert to float)
+    if df["Cost of Capital"].dtype == object:
+        df["Cost of Capital"] = df["Cost of Capital"].str.rstrip("%").astype(float) / 100.0
+        df["D/(D+E)"] = df["D/(D+E)"].str.rstrip("%").astype(float) / 100.0
+    return df
 
-# --- Streamlit page configuration ---
-st.set_page_config(page_title="Industry Match Game (WACC)", page_icon=":bar_chart:", layout="wide")
-st.title("Industry WACC Matching Game")
+df = load_industry_data()
 
-# Initialize session state for game stage
-if "game_stage" not in st.session_state:
-    st.session_state.game_stage = "setup"
-
-# Sidebar: New round setup form
-with st.sidebar.form("setup_form"):
-    num_industries = st.slider("Select number of industries for this round", min_value=2, max_value=10, value=5)
-    start_button = st.form_submit_button("Start New Round")
-    if start_button:
-        # Start a new round: sample industries and assign letters
-        # Clear any old guesses from previous rounds
-        for letter_key in [f"guess_{chr(ord('A')+i)}" for i in range(10)]:  # keys for A-J
-            if letter_key in st.session_state:
-                del st.session_state[letter_key]
-        # Randomly sample the specified number of industries
-        df_round = df.sample(n=num_industries, random_state=None).reset_index(drop=True)
-        letters = [chr(ord('A') + i) for i in range(num_industries)]
-        df_round["Letter"] = letters  # assign letters to sampled industries
-        # Store round data and state
-        st.session_state.df_round = df_round
-        st.session_state.game_stage = "playing"
-        st.session_state.score = 0.0
-        st.session_state.correct_count = 0
-        st.session_state.wrong_count = 0
-
-# Main app logic based on game stage
-if st.session_state.game_stage == "setup":
-    st.write("Choose the number of industries from the sidebar to start a new round.")
-
-elif st.session_state.game_stage == "playing":
-    df_round = st.session_state.df_round
-    letters = list(df_round["Letter"])
-    # Display 3D plot of the selected industries
+# Utility to create 3D scatter plot figure
+def make_scatter_3d(dataframe, letters):
     fig = go.Figure(data=[go.Scatter3d(
-        x=df_round["Beta"],
-        y=df_round["D/(D+E)"],
-        z=df_round["Cost of Capital"],
-        mode="markers+text",
-        text=df_round["Letter"], 
-        textposition="top center",
-        marker=dict(size=6, color="cornflowerblue"),
-        showlegend=False
+        x=dataframe["Beta"], 
+        y=dataframe["D/(D+E)"], 
+        z=dataframe["Cost of Capital"],
+        mode='markers+text',
+        text=letters,
+        textposition='top center',
+        marker=dict(size=6),
+        hovertemplate="Beta: %{x:.2f}<br>Debt Ratio: %{y:.2%}<br>WACC: %{z:.2%}<extra></extra>"
     )])
-    fig.update_layout(
-        margin=dict(l=20, r=20, t=40, b=20),
-        scene=dict(
-            xaxis_title="Beta",
-            yaxis_title="Debt Ratio (%)",
-            zaxis_title="Cost of Capital (%)"
-        )
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.subheader("Guess the Industry for Each Lettered Point")
-    placeholder_option = "Select industry"
-    # Create a dropdown for each lettered point
-    for letter in letters:
-        # Retrieve the numeric clues for this point
-        row = df_round[df_round["Letter"] == letter].iloc[0]
-        beta_val = row["Beta"]
-        debt_val = row["D/(D+E)"]
-        wacc_val = row["Cost of Capital"]
-        dropdown_label = f"**Point {letter}:** Beta {beta_val:.2f}, Debt {debt_val:.2f}%, WACC {wacc_val:.2f}%"
-        # Determine which industries have already been chosen in other dropdowns
-        chosen_others = set()
-        for other in letters:
-            if other == letter:
-                continue
-            guess_key = f"guess_{other}"
-            if guess_key in st.session_state:
-                chosen_val = st.session_state[guess_key]
-                if chosen_val and chosen_val != placeholder_option:
-                    chosen_others.add(chosen_val)
-        # Available options: placeholder + industries not already chosen by other letters
-        available_options = [placeholder_option] + [ind for ind in df_round["Industry Name"] if ind not in chosen_others]
-        st.selectbox(dropdown_label, options=available_options, key=f"guess_{letter}")
-    # Submit button for guesses
-    submitted = st.button("Submit Guesses")
-    if submitted:
-        # Ensure all dropdowns have a selection
-        guesses = {letter: st.session_state[f"guess_{letter}"] for letter in letters}
-        if placeholder_option in guesses.values():
-            st.warning("Please select an industry for **each** point before submitting your guesses.")
-        else:
-            # Calculate score
-            correct = 0
-            wrong = 0
-            for letter, guess in guesses.items():
-                actual_industry = df_round[df_round["Letter"] == letter]["Industry Name"].iloc[0]
-                if guess == actual_industry:
-                    correct += 1
-                else:
-                    wrong += 1
-            score = correct - 0.5 * wrong
-            # Store results in session state
-            st.session_state.score = score
-            st.session_state.correct_count = correct
-            st.session_state.wrong_count = wrong
-            st.session_state.game_stage = "finished"
-            # Display outcome messages
-            st.write(f"**Score:** {score:.2f}")
-            if correct == len(letters):
-                st.success("Congratulations! You matched all industries correctly! :tada:")
+    fig.update_layout(scene=dict(
+        xaxis_title="Beta", 
+        yaxis_title="Debt Ratio (D/(D+E))", 
+        zaxis_title="Cost of Capital (WACC)"
+    ))
+    return fig
+
+# Initialize session state variables
+if "game_active" not in st.session_state:
+    st.session_state.game_active = False
+    st.session_state.submitted = False
+
+# Main app logic
+st.title("🌀 Industry WACC Guessing Game")
+st.write("Match each anonymous industry data point (Beta, Debt%, WACC) to the correct industry.")
+
+# If game not started, show setup controls
+if not st.session_state.game_active:
+    # Select number of industries for this round
+    num_options = st.slider("How many industries do you want to guess?", 2, 10, 5)
+    if st.button("Start Round"):
+        # Begin a new round with the chosen number of industries
+        selected_df = df.sample(num_options, random_state=None).reset_index(drop=True)
+        st.session_state.selected_df = selected_df
+        st.session_state.n = num_options
+        st.session_state.game_active = True
+        st.session_state.submitted = False
+        # Clear any old guesses in session state
+        for key in list(st.session_state.keys()):
+            if key.startswith("guess_"):
+                st.session_state.pop(key)
+        # Prepare letters for points and create scatter plot
+        letters = [chr(65 + i) for i in range(num_options)]
+        fig = make_scatter_3d(selected_df, letters)
+        # Display scatter plot and input form for guesses
+        st.plotly_chart(fig)
+        with st.form("guesses_form"):
+            # Create a dropdown for each data point
+            for idx, letter in enumerate(letters):
+                beta_val = selected_df.loc[idx, "Beta"]
+                debt_pct = selected_df.loc[idx, "D/(D+E)"] * 100
+                wacc_pct = selected_df.loc[idx, "Cost of Capital"] * 100
+                # Prepare dropdown options excluding already chosen industries
+                current_guess = st.session_state.get(f"guess_{letter}", None)
+                chosen = [st.session_state.get(f"guess_{L}") for L in letters if L != letter]
+                chosen = [c for c in chosen if c]  # remove None
+                all_inds = list(selected_df["Industry Name"])
+                available_options = [ind for ind in all_inds if ind not in chosen or ind == current_guess]
+                st.selectbox(
+                    f"Point {letter}: Beta {beta_val:.2f}, Debt {debt_pct:.2f}%, WACC {wacc_pct:.2f}%", 
+                    options=available_options, 
+                    index=(available_options.index(current_guess) if current_guess else 0 if available_options else 0),
+                    key=f"guess_{letter}"
+                )
+            submit_guesses = st.form_submit_button("Submit Guesses")
+        if submit_guesses:
+            # Ensure all points have a selection
+            guesses = [st.session_state.get(f"guess_{L}") for L in letters]
+            if None in guesses or any(g == "" for g in guesses):
+                st.error("Please select an industry for each data point before submitting.")
             else:
-                st.error("Game over – some matches were incorrect.")
-            # Show correct mappings in a table
-            result_df = df_round[["Letter", "Industry Name", "Beta", "D/(D+E)", "Cost of Capital"]].copy()
-            # Rename columns for display
-            result_df.rename(columns={"D/(D+E)": "Debt (%)", "Cost of Capital": "WACC (%)"}, inplace=True)
-            # Format numeric values for display
-            result_df["Beta"] = result_df["Beta"].apply(lambda x: f"{x:.2f}")
-            result_df["Debt (%)"] = result_df["Debt (%)"].apply(lambda x: f"{x:.2f}%")
-            result_df["WACC (%)"] = result_df["WACC (%)"].apply(lambda x: f"{x:.2f}%")
-            st.table(result_df)
-            st.info("Use the sidebar to start a new round, or click Play Again to choose a new set of industries.")
-            # Play Again button
-            if st.button("Play Again"):
-                # Reset to setup stage for a new game
-                st.session_state.game_stage = "setup"
-                # Optionally, clear round-specific state
-                st.session_state.pop("df_round", None)
-                st.session_state.pop("score", None)
-                st.session_state.pop("correct_count", None)
-                st.session_state.pop("wrong_count", None)
-                for letter_key in [f"guess_{chr(ord('A')+i)}" for i in range(10)]:
-                    st.session_state.pop(letter_key, None)
+                # Calculate score
+                actual = list(selected_df["Industry Name"])
+                score = 0.0
+                for guess, correct in zip(guesses, actual):
+                    if guess == correct:
+                        score += 1.0
+                    else:
+                        score -= 0.5
+                # Show results
+                st.session_state.submitted = True
+                st.markdown(f"**Score:** {score:.2f}")
+                results_df = pd.DataFrame({"Point": letters, "Actual Industry": actual})
+                st.table(results_df)
+                # New round options
+                st.markdown("### Play Another Round")
+                new_count = st.slider("Number of industries for new round:", 2, 10, st.session_state.n, key="new_round_count")
+                if st.button("New Round"):
+                    # Set up a new round with the chosen number of industries
+                    new_df = df.sample(new_count, random_state=None).reset_index(drop=True)
+                    st.session_state.selected_df = new_df
+                    st.session_state.n = new_count
+                    st.session_state.submitted = False
+                    # Clear old guesses
+                    for key in list(st.session_state.keys()):
+                        if key.startswith("guess_"):
+                            st.session_state.pop(key)
+                    # Display new round scatter plot and guess form
+                    letters_new = [chr(65 + i) for i in range(new_count)]
+                    fig_new = make_scatter_3d(new_df, letters_new)
+                    st.plotly_chart(fig_new)
+                    with st.form("guesses_form_new"):
+                        for idx, letter in enumerate(letters_new):
+                            beta_val = new_df.loc[idx, "Beta"]
+                            debt_pct = new_df.loc[idx, "D/(D+E)"] * 100
+                            wacc_pct = new_df.loc[idx, "Cost of Capital"] * 100
+                            current_guess = st.session_state.get(f"guess_{letter}", None)
+                            chosen = [st.session_state.get(f"guess_{L}") for L in letters_new if L != letter]
+                            chosen = [c for c in chosen if c]
+                            all_inds = list(new_df["Industry Name"])
+                            available_options = [ind for ind in all_inds if ind not in chosen or ind == current_guess]
+                            st.selectbox(
+                                f"Point {letter}: Beta {beta_val:.2f}, Debt {debt_pct:.2f}%, WACC {wacc_pct:.2f}%", 
+                                options=available_options,
+                                index=(available_options.index(current_guess) if current_guess else 0 if available_options else 0),
+                                key=f"guess_{letter}"
+                            )
+                        submit_new = st.form_submit_button("Submit Guesses")
+                    if submit_new:
+                        # (The submission handling for the new round will be captured on the next app rerun)
+                        st.experimental_rerun()
 
-elif st.session_state.game_stage == "finished":
-    # In case the app is in finished state on a rerun, display the last results
-    df_round = st.session_state.df_round
-    letters = list(df_round["Letter"])
-    fig = go.Figure(data=[go.Scatter3d(
-        x=df_round["Beta"], y=df_round["Debt (%)"], z=df_round["WACC (%)"],
-        mode="markers+text", text=df_round["Letter"], textposition="top center",
-        marker=dict(size=6, color="cornflowerblue"), showlegend=False
-    )])
-    fig.update_layout(
-        margin=dict(l=20, r=20, t=40, b=20),
-        scene=dict(xaxis_title="Beta", yaxis_title="Debt Ratio (%)", zaxis_title="Cost of Capital (%)")
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.write(f"**Score:** {st.session_state.score:.2f}")
-    if st.session_state.correct_count == len(letters):
-        st.success("Congratulations! You matched all industries correctly! :tada:")
-    else:
-        st.error("Game over – some matches were incorrect.")
-    result_df = df_round[["Letter", "Industry Name", "Beta", "D/(D+E)", "Cost of Capital"]].copy()
-    result_df.rename(columns={"D/(D+E)": "Debt (%)", "Cost of Capital": "WACC (%)"}, inplace=True)
-    result_df["Beta"] = result_df["Beta"].apply(lambda x: f"{x:.2f}")
-    result_df["Debt (%)"] = result_df["Debt (%)"].apply(lambda x: f"{x:.2f}%")
-    result_df["WACC (%)"] = result_df["WACC (%)"].apply(lambda x: f"{x:.2f}%")
-    st.table(result_df)
-    st.info("Use the sidebar to start a new round, or click Play Again below.")
-    if st.button("Play Again"):
-        st.session_state.game_stage = "setup"
-        st.session_state.pop("df_round", None)
-        st.session_state.pop("score", None)
-        st.session_state.pop("correct_count", None)
-        st.session_state.pop("wrong_count", None)
-        for letter_key in [f"guess_{chr(ord('A')+i)}" for i in range(10)]:
-            st.session_state.pop(letter_key, None)
+# If game is active and not yet submitted (user in the middle of a round), show the guessing interface
+elif st.session_state.game_active and not st.session_state.submitted:
+    selected_df = st.session_state.selected_df
+    n = st.session_state.n
+    letters = [chr(65 + i) for i in range(n)]
+    fig = make_scatter_3d(selected_df, letters)
+    st.plotly_chart(fig)
+    with st.form("guesses_form_active"):
+        for idx, letter in enumerate(letters):
+            beta_val = selected_df.loc[idx, "Beta"]
+            debt_pct = selected_df.loc[idx, "D/(D+E)"] * 100
+            wacc_pct = selected_df.loc[idx, "Cost of Capital"] * 100
+            current_guess = st.session_state.get(f"guess_{letter}", None)
+            chosen = [st.session_state.get(f"guess_{L}") for L in letters if L != letter]
+            chosen = [c for c in chosen if c]
+            all_inds = list(selected_df["Industry Name"])
+            available_options = [ind for ind in all_inds if ind not in chosen or ind == current_guess]
+            st.selectbox(
+                f"Point {letter}: Beta {beta_val:.2f}, Debt {debt_pct:.2f}%, WACC {wacc_pct:.2f}%",
+                options=available_options,
+                index=(available_options.index(current_guess) if current_guess else 0 if available_options else 0),
+                key=f"guess_{letter}"
+            )
+        submit_round = st.form_submit_button("Submit Guesses")
+    if submit_round:
+        guesses = [st.session_state.get(f"guess_{L}") for L in letters]
+        if None in guesses or any(g == "" for g in guesses):
+            st.error("Please select an industry for each data point before submitting.")
+        else:
+            score = 0.0
+            actual = list(selected_df["Industry Name"])
+            for guess, correct in zip(guesses, actual):
+                score += 1.0 if guess == correct else -0.5
+            st.session_state.score = score
+            st.session_state.submitted = True
+            st.experimental_rerun()
+
+# If game is active and submitted (round over), display results and option for new round
+elif st.session_state.game_active and st.session_state.submitted:
+    selected_df = st.session_state.selected_df
+    letters = [chr(65 + i) for i in range(len(selected_df))]
+    score = st.session_state.get("score", 0.0)
+    st.markdown(f"**Score:** {score:.2f}")
+    results_df = pd.DataFrame({"Point": letters, "Actual Industry": list(selected_df["Industry Name"])})
+    st.table(results_df)
+    st.markdown("### Play Another Round")
+    new_count = st.slider("Number of industries for new round:", 2, 10, st.session_state.n, key="new_round_count")
+    if st.button("New Round"):
+        new_df = df.sample(new_count, random_state=None).reset_index(drop=True)
+        st.session_state.selected_df = new_df
+        st.session_state.n = new_count
+        st.session_state.submitted = False
+        # Clear old guesses
+        for key in list(st.session_state.keys()):
+            if key.startswith("guess_"):
+                st.session_state.pop(key)
+        # Display new round setup
+        st.experimental_rerun()
