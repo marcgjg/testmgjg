@@ -125,5 +125,6 @@ if st.session_state.get("game_active"):
         if all(r[1] == "✅" for r in results):
             st.success("Perfect score! 🎉")
         st.subheader("Correct Answers:")
-        for L, mark, val in results:
-            st.write(f"{mark} Point {L} → {val}")
+        for i, (L, mark, val) in enumerate(results):
+            industry = st.session_state.df.at[i, "Industry"]
+            st.write(f"{mark} Point {L} ({industry}) → {val}")
