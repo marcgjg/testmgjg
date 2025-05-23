@@ -1,236 +1,244 @@
 import streamlit as st
-import requests
 import pandas as pd
 import plotly.graph_objects as go
+import random
 
-# Data source URL and fallback dataset (snapshot as of Jan 2025)
-CSV_URL = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
-SAMPLE_CSV = """Industry Name,Beta,Cost of Capital,D/(D+E)
-Advertising,1.34,9.22%,20.76%
-Aerospace/Defense,0.90,7.68%,18.56%
-Air Transport,1.24,7.29%,51.65%
-Apparel,0.99,7.44%,31.45%
-Auto & Truck,1.62,10.34%,18.30%
-Auto Parts,1.23,8.09%,32.36%
-Bank (Money Center),0.88,5.64%,64.69%
-Banks (Regional),0.52,5.69%,37.62%
-Beverage (Alcoholic),0.61,6.55%,23.35%
-Beverage (Soft),0.57,6.59%,16.48%
-Broadcasting,0.92,6.03%,59.93%
-Brokerage & Investment Banking,0.95,5.74%,65.11%
-Building Materials,1.36,9.46%,15.95%
-Business & Consumer Services,1.00,8.27%,14.37%
-Cable TV,0.96,6.28%,55.82%
-Chemical (Basic),1.15,7.63%,36.81%
-Chemical (Diversified),0.99,6.47%,53.08%
-Chemical (Specialty),0.92,7.67%,21.34%
-Coal & Related Energy,1.18,9.23%,8.65%
-Computer Services,1.23,8.72%,20.84%
-Computers/Peripherals,1.14,9.29%,4.60%
-Construction Supplies,1.29,9.14%,17.74%
-Diversified,1.09,8.61%,13.86%
-Drugs (Biotechnology),1.25,9.37%,14.60%
-Drugs (Pharmaceutical),1.07,8.72%,14.45%
-Education,0.98,8.10%,16.28%
-Electrical Equipment,1.27,9.40%,12.93%
-Electronics (Consumer & Office),0.92,8.12%,11.75%
-Electronics (General),1.06,8.55%,12.60%
-Engineering/Construction,0.99,8.17%,15.20%
-Entertainment,1.04,8.28%,16.90%
-Environmental & Waste Services,0.92,7.88%,16.19%
-Farming/Agriculture,0.98,7.43%,34.78%
-Financial Svcs. (Non-bank & Insurance),1.07,5.46%,74.14%
-Food Processing,0.47,6.02%,26.75%
-Food Wholesalers,0.72,6.64%,30.21%
-Furn/Home Furnishings,0.87,7.15%,29.54%
-Green & Renewable Energy,1.13,6.50%,63.79%
-Healthcare Products,1.01,8.50%,11.34%
-Healthcare Support Services,0.94,7.60%,24.36%
-Heathcare Information and Technology,1.22,9.10%,13.94%
-Homebuilding,1.43,9.78%,14.89%
-Hospitals/Healthcare Facilities,0.86,6.57%,43.55%
-Hotel/Gaming,1.19,8.12%,30.17%
-Household Products,0.90,7.91%,13.21%
-Information Services,0.98,7.62%,26.13%
-Insurance (General),0.76,7.35%,14.79%
-Insurance (Life),0.73,6.36%,38.55%
-Insurance (Prop/Cas.),0.61,6.79%,13.39%
-Investments & Asset Management,0.57,6.20%,25.95%
-Machinery,1.07,8.54%,13.57%
-Metals & Mining,1.02,8.40%,14.35%
-Office Equipment & Services,1.20,8.05%,31.74%
-Oil/Gas (Integrated),0.48,6.33%,12.06%
-Oil/Gas (Production and Exploration),0.88,7.52%,21.04%
-Oil/Gas Distribution,0.75,6.59%,34.01%
-Oilfield Svcs/Equip.,0.94,7.44%,27.81%
-Packaging & Container,0.98,7.20%,34.60%
-Paper/Forest Products,1.07,8.32%,18.41%
-Power,0.54,5.54%,44.55%
-Precious Metals,1.23,9.09%,15.89%
-Publishing & Newspapers,0.64,6.63%,22.30%
-R.E.I.T.,0.95,6.62%,45.50%
-Real Estate (Development),1.03,6.58%,52.09%
-Real Estate (General/Diversified),0.86,6.99%,29.55%
-Real Estate (Operations & Services),1.08,8.14%,22.35%
-Recreation,1.33,7.97%,39.43%
-Reinsurance,0.54,6.08%,26.78%
-Restaurant/Dining,1.01,8.05%,18.79%
-Retail (Automotive),1.35,8.39%,33.51%
-Retail (Building Supply),1.79,11.00%,16.80%
-Retail (Distributors),1.12,8.16%,23.82%
-Retail (General),1.06,8.79%,8.03%
-Retail (Grocery and Food),0.58,5.96%,34.32%
-Retail (REITs),0.95,6.96%,35.39%
-Retail (Special Lines),1.22,8.64%,22.44%
-Rubber& Tires,0.65,5.33%,79.47%
-Semiconductor,1.49,10.76%,3.75%
-Semiconductor Equip,1.48,10.51%,7.56%
-Shipbuilding & Marine,0.58,6.64%,16.05%
-Shoe,1.42,10.15%,9.29%
-Software (Entertainment),1.18,9.58%,2.43%
-Software (Internet),1.69,11.10%,10.35%
-Software (System & Application),1.24,9.69%,4.67%
-Steel,1.06,8.17%,20.57%
-Telecom (Wireless),0.77,6.92%,32.25%
-Telecom. Equipment,1.00,8.39%,11.35%
-Telecom. Services,0.89,6.37%,50.04%
-Tobacco,0.98,7.95%,21.85%
-Transportation,1.03,7.72%,27.91%
-Transportation (Railroads),0.99,7.75%,22.11%
-Trucking,1.10,8.39%,18.64%
-Utility (General),0.39,5.20%,43.84%
-Utility (Water),0.68,6.15%,36.96%"""
-
-@st.cache_data
-def load_wacc_data():
-    try:
-        res = requests.get(CSV_URL, timeout=5)
-        if res.status_code == 200:
-            content = res.text
-            if not content.startswith("Industry Name"):
-                raise Exception("Unexpected content")
-        else:
-            raise Exception("Fetch failed")
-    except Exception:
-        content = SAMPLE_CSV
-    import io
-    df = pd.read_csv(io.StringIO(content))
-    # Convert percentage columns to numeric for plotting
-    df["Cost of Capital"] = df["Cost of Capital"].str.rstrip("%").astype(float)
-    df["D/(D+E)"] = df["D/(D+E)"].str.rstrip("%").astype(float)
-    return df
-
-# Initialize data
-df = load_wacc_data()
+# Set wide layout for better display (optional)
+st.set_page_config(layout="wide")
 
 # Session state initialization
-if "round_active" not in st.session_state:
-    st.session_state.round_active = False
-if "finished" not in st.session_state:
-    st.session_state.finished = False
-if "round_data" not in st.session_state:
-    st.session_state.round_data = None
-if "letters" not in st.session_state:
-    st.session_state.letters = []
-if "combo_options" not in st.session_state:
-    st.session_state.combo_options = []
+if "game_active" not in st.session_state:
+    st.session_state.game_active = False
+    st.session_state.submitted = False
+    st.session_state.round = 0
+    st.session_state.game_data = []
 
-# Placeholder text for dropdowns
-placeholder_text = "(Select metrics)"
-
-# Start a new round
-import random, string
-def start_round():
-    n = st.session_state.n_points
-    if n > len(df):
-        n = len(df)
-    selection = df.sample(n, random_state=random.randint(0, 10000)).reset_index(drop=True)
-    letters = list(string.ascii_uppercase)
-    selection["Letter"] = letters[:n]
-    st.session_state.round_data = selection
-    st.session_state.letters = list(selection["Letter"])
-    # Prepare combo options for dropdowns and shuffle once
-    combos = [
-        f"Beta {row['Beta']:.2f}, Debt {row['D/(D+E)']:.2f}%, WACC {row['Cost of Capital']:.2f}%"
-        for _, row in selection.iterrows()
-    ]
-    random.shuffle(combos)
-    st.session_state.combo_options = combos
-    # Reset selections from any previous round
-    for key in list(st.session_state.keys()):
-        if key.startswith("guess_"):
-            st.session_state[key] = placeholder_text
-    st.session_state.round_active = True
-    st.session_state.finished = False
-    # Clear old score data
-    for key in ["score", "correct_count", "wrong_count", "perfect"]:
-        if key in st.session_state:
-            del st.session_state[key]
-
-# Finish round and score answers
-def finish_round():
-    correct = 0
-    wrong = 0
-    if st.session_state.round_data is not None:
-        for _, row in st.session_state.round_data.iterrows():
-            letter = row["Letter"]
-            correct_str = f"Beta {row['Beta']:.2f}, Debt {row['D/(D+E)']:.2f}%, WACC {row['Cost of Capital']:.2f}%"
-            chosen = st.session_state.get(f"guess_{letter}", placeholder_text)
-            if chosen == correct_str:
-                correct += 1
-            else:
-                wrong += 1
-    st.session_state.score = correct * 1.0 + wrong * -0.5
-    st.session_state.correct_count = correct
-    st.session_state.wrong_count = wrong
-    st.session_state.perfect = (wrong == 0 and correct == len(st.session_state.letters))
-    st.session_state.finished = True
+# Title
+st.title("🎯 Industry WACC Matching Game")
 
 # Sidebar controls
-st.sidebar.title("Industry WACC Matching Game")
-st.sidebar.markdown("Match each letter-labeled point to the correct industry metrics:")
-st.sidebar.slider("Number of industries to match", 3, 10, 5, key="n_points",
-                  disabled=(st.session_state.round_active and not st.session_state.finished))
-st.sidebar.button("Start New Round", on_click=start_round,
-                  disabled=(st.session_state.round_active and not st.session_state.finished))
+if not st.session_state.game_active or st.session_state.submitted:
+    # Only show controls if no game running or round finished
+    num_points = st.sidebar.slider("Number of industries (points)", min_value=3, max_value=26, value=5, step=1)
+    start_label = "Start New Round" if st.session_state.game_active and st.session_state.submitted else "Start Game"
+    if st.sidebar.button(start_label):
+        # Start a new game round
+        # Load data (if not already loaded)
+        try:
+            # Try fetching latest data
+            df = pd.read_csv("https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv")
+        except Exception:
+            # Fallback to hardcoded snapshot (Jan 2025 data)
+            data_snapshot = [
+                # Industry, Beta, Debt%, WACC (Jan 2025 snapshot)
+                ("Advertising", 1.34, 20.76, 9.22),
+                ("Aerospace/Defense", 0.90, 18.56, 7.68),
+                ("Air Transport", 1.24, 51.65, 7.29),
+                ("Apparel", 0.99, 31.45, 7.44),
+                ("Auto & Truck", 1.62, 18.30, 10.34),
+                ("Auto Parts", 1.23, 32.36, 8.09),
+                ("Bank (Money Center)", 0.88, 64.69, 5.64),
+                ("Banks (Regional)", 0.52, 37.62, 5.69),
+                ("Beverage (Alcoholic)", 0.61, 23.35, 6.55),
+                ("Beverage (Soft)", 0.57, 16.48, 6.59),
+                ("Broadcasting", 0.92, 59.93, 6.03),
+                ("Brokerage & Investment Banking", 0.95, 65.11, 5.74),
+                ("Building Materials", 1.36, 15.95, 9.46),
+                ("Business & Consumer Services", 1.00, 14.37, 8.27),
+                ("Cable TV", 0.96, 55.82, 6.28),
+                ("Chemical (Basic)", 1.15, 36.81, 7.63),
+                ("Chemical (Diversified)", 0.99, 53.08, 6.47),
+                ("Chemical (Specialty)", 0.92, 21.34, 7.67),
+                ("Coal & Related Energy", 1.18, 8.65, 9.23),
+                ("Computer Services", 1.23, 20.84, 8.72),
+                ("Computers/Peripherals", 1.14, 4.60, 9.29),
+                ("Construction Supplies", 1.29, 17.74, 9.14),
+                ("Diversified", 1.09, 13.86, 8.61),
+                ("Drugs (Biotechnology)", 1.25, 14.60, 9.37),
+                ("Drugs (Pharmaceutical)", 1.07, 14.45, 8.72),
+                ("Education", 0.98, 16.28, 8.10),
+                ("Electrical Equipment", 1.27, 12.93, 9.40),
+                ("Electronics (Consumer & Office)", 0.92, 11.75, 8.12),
+                ("Electronics (General)", 1.06, 12.60, 8.55),
+                ("Engineering/Construction", 0.99, 15.20, 8.17),
+                ("Entertainment", 1.04, 16.90, 8.28),
+                ("Environmental & Waste Services", 0.92, 16.19, 7.88),
+                ("Farming/Agriculture", 0.98, 34.78, 7.43),
+                ("Financial Svcs. (Non-bank & Insurance)", 1.07, 74.14, 5.46),
+                ("Food Processing", 0.47, 26.75, 6.02),
+                ("Food Wholesalers", 0.72, 30.21, 6.64),
+                ("Furn/Home Furnishings", 0.87, 29.54, 7.15),
+                ("Green & Renewable Energy", 1.13, 63.79, 6.50),
+                ("Healthcare Products", 1.01, 11.34, 8.50),
+                ("Healthcare Support Services", 0.94, 24.36, 7.60),
+                ("Healthcare Information and Technology", 1.22, 13.94, 9.10),
+                ("Homebuilding", 1.43, 14.89, 9.78),
+                ("Hospitals/Healthcare Facilities", 0.86, 43.55, 6.57),
+                ("Hotel/Gaming", 1.19, 30.17, 8.12),
+                ("Household Products", 0.90, 13.21, 7.91),
+                ("Information Services", 0.98, 26.13, 7.62),
+                ("Insurance (General)", 0.76, 14.79, 7.35),
+                ("Insurance (Life)", 0.73, 38.55, 6.36),
+                ("Insurance (Prop/Cas.)", 0.61, 13.39, 6.79),
+                ("Investments & Asset Management", 0.57, 25.95, 6.20),
+                ("Machinery", 1.07, 13.57, 8.54),
+                ("Metals & Mining", 1.02, 14.35, 8.40),
+                ("Office Equipment & Services", 1.20, 31.74, 8.05),
+                ("Oil/Gas (Integrated)", 0.48, 12.06, 6.33),
+                ("Oil/Gas (Production and Exploration)", 0.88, 21.04, 7.52),
+                ("Oil/Gas Distribution", 0.75, 34.01, 6.59),
+                ("Oilfield Svcs/Equip.", 0.94, 27.81, 7.44),
+                ("Packaging & Container", 0.98, 34.60, 7.20),
+                ("Paper/Forest Products", 1.07, 18.41, 8.32),
+                ("Power", 0.54, 44.55, 5.54),
+                ("Precious Metals", 1.23, 15.89, 9.09),
+                ("Publishing & Newspapers", 0.64, 22.30, 6.63),
+                ("R.E.I.T.", 0.95, 45.50, 6.62),
+                ("Real Estate (Development)", 1.03, 52.09, 6.58),
+                ("Real Estate (General/Diversified)", 0.86, 29.55, 6.99),
+                ("Real Estate (Operations & Services)", 1.08, 22.35, 8.14),
+                ("Recreation", 1.33, 39.43, 7.97),
+                ("Reinsurance", 0.54, 26.78, 6.08),
+                ("Restaurant/Dining", 1.01, 18.79, 8.05),
+                ("Retail (Automotive)", 1.35, 33.51, 8.39),
+                ("Retail (Building Supply)", 1.79, 16.80, 11.00),
+                ("Retail (Distributors)", 1.12, 23.82, 8.16),
+                ("Retail (General)", 1.06, 8.03, 8.79),
+                ("Retail (Grocery and Food)", 0.58, 34.32, 5.96),
+                ("Retail (REITs)", 0.95, 35.39, 6.96),
+                ("Retail (Special Lines)", 1.22, 22.44, 8.64),
+                ("Rubber & Tires", 0.65, 79.47, 5.33),
+                ("Semiconductor", 1.49, 3.75, 10.76),
+                ("Semiconductor Equip", 1.48, 7.56, 10.51),
+                ("Shipbuilding & Marine", 0.58, 16.05, 6.64),
+                ("Shoe", 1.42, 9.29, 10.15),
+                ("Software (Entertainment)", 1.18, 2.43, 9.58),
+                ("Software (Internet)", 1.69, 10.35, 11.10),
+                ("Software (System & Application)", 1.24, 4.67, 9.69),
+                ("Steel", 1.06, 20.57, 8.17),
+                ("Telecom (Wireless)", 0.77, 32.25, 6.92),
+                ("Telecom. Equipment", 1.00, 11.35, 8.39),
+                ("Telecom. Services", 0.89, 50.04, 6.37),
+                ("Tobacco", 0.98, 21.85, 7.95),
+                ("Transportation", 1.03, 27.91, 7.72),
+                ("Transportation (Railroads)", 0.99, 22.11, 7.75),
+                ("Trucking", 1.10, 18.64, 8.39),
+                ("Utility (General)", 0.39, 43.84, 5.20),
+                ("Utility (Water)", 0.68, 36.96, 6.15)
+            ]
+            df = pd.DataFrame(data_snapshot, columns=["Industry", "Beta", "Debt%", "WACC"])
+        else:
+            # If CSV loaded, filter columns and rename for consistency
+            df = df[["Industry Name", "Beta", "D/(D+E)", "Cost of Capital"]].copy()
+            df.columns = ["Industry", "Beta", "Debt%", "WACC"]
+        # If data was loaded successfully above, df is ready
+        # Randomly sample the desired number of industries
+        selected = df.sample(n=num_points, random_state=None).reset_index(drop=True)
+        # Prepare game data and letters
+        letters = [chr(65 + i) for i in range(len(selected))]
+        game_data = []  # list of dicts for each point
+        for i, row in selected.iterrows():
+            ind_name = row["Industry"]
+            beta_val = row["Beta"]
+            debt_val = row["Debt%"] * (100 if row["Debt%"] <= 1 else 1)  # ensure percent (if in 0-1 form, convert)
+            wacc_val = row["WACC"] * (100 if row["WACC"] <= 1 else 1)
+            # Format to two decimals for consistency
+            beta_val = float(f"{beta_val:.2f}")
+            debt_val = float(f"{debt_val:.2f}")
+            wacc_val = float(f"{wacc_val:.2f}")
+            game_data.append({
+                "letter": letters[i],
+                "industry": ind_name,
+                "beta": beta_val,
+                "debt": debt_val,
+                "wacc": wacc_val
+            })
+        # Shuffle the list of metric combinations for options
+        combos = [
+            f"Beta: {d['beta']:.2f}, Debt%: {d['debt']:.2f}%, WACC: {d['wacc']:.2f}%"
+            for d in game_data
+        ]
+        random.shuffle(combos)
+        # Store in session state
+        st.session_state.game_data = game_data
+        st.session_state.options = combos
+        st.session_state.game_active = True
+        st.session_state.submitted = False
+        # Increment round counter for unique keys
+        st.session_state.round += 1
 
-# Main game interface
-if st.session_state.round_active:
-    data_df = st.session_state.round_data
-    # 3D scatter plot of Beta vs Debt vs WACC with letter labels
+# If a game is active, display the game interface
+if st.session_state.game_active:
+    game_data = st.session_state.game_data
+    # During an active round, hide sidebar controls (already handled above).
+    if not st.session_state.submitted:
+        st.sidebar.write("🔒 Round in progress...")
+    # Create 3D scatter plot with Plotly
+    letters = [d["letter"] for d in game_data]
+    x_vals = [d["beta"] for d in game_data]
+    y_vals = [d["debt"] for d in game_data]
+    z_vals = [d["wacc"] for d in game_data]
     fig = go.Figure(data=[go.Scatter3d(
-        x=data_df["Beta"],
-        y=data_df["D/(D+E)"],
-        z=data_df["Cost of Capital"],
-        mode="markers+text",
-        text=data_df["Letter"],
-        textposition="top center",
-        marker=dict(size=5, color="blue"),
-        hoverinfo="none"
+        x=x_vals, y=y_vals, z=z_vals,
+        mode='markers+text',
+        text=letters,
+        textposition='top center',
+        marker=dict(size=6, color='blue'),
+        hovertext=[f"{d['industry']}" for d in game_data],
+        hovertemplate="<b>%{hovertext}</b><br>Beta: %{x}<br>Debt%%: %{y}<br>WACC: %{z}<extra></extra>"
     )])
     fig.update_layout(
-        scene=dict(xaxis_title="Beta", yaxis_title="Debt (%)", zaxis_title="WACC (%)"),
-        margin=dict(l=0, r=0, b=0, t=0)
+        margin=dict(l=0, r=0, b=0, t=0),
+        scene=dict(
+            xaxis_title="Beta",
+            yaxis_title="Debt (%)",
+            zaxis_title="WACC (%)"
+        ),
+        showlegend=False
     )
-    st.plotly_chart(fig)
-    # Dropdowns for each letter
-    combos = st.session_state.combo_options
-    for letter in st.session_state.letters:
-        taken = {
-            st.session_state.get(f"guess_{other}", "")
-            for other in st.session_state.letters if other != letter
-        }
-        taken.discard(placeholder_text)
-        current = st.session_state.get(f"guess_{letter}", placeholder_text)
-        available = [opt for opt in combos if opt not in taken]
-        options = [placeholder_text] + available
-        if current != placeholder_text and current not in options:
-            options.append(current)
-        st.selectbox(f"Letter {letter}", options, key=f"guess_{letter}", disabled=st.session_state.finished)
-    # Check answers or display results
-    if not st.session_state.finished:
-        st.button("Check Answers", on_click=finish_round)
+    st.plotly_chart(fig, use_container_width=True)
+    # If round not yet submitted, show dropdowns for answers
+    if not st.session_state.submitted:
+        st.markdown("**Match each industry to its Beta, Debt%, and WACC:**")
+        # For each industry, show a dropdown of metric combinations
+        answers = {}
+        for d in game_data:
+            letter = d["letter"]
+            ind_name = d["industry"]
+            prompt = f"Point {letter}: {ind_name}"
+            # Unique key per round+letter to avoid reuse
+            key = f"answer_{letter}_{st.session_state.round}"
+            answers[letter] = st.selectbox(prompt, options=st.session_state.options, key=key)
+        # Submit button
+        if st.button("Submit Answers"):
+            # Check for duplicate selections
+            selections = list(answers.values())
+            if len(set(selections)) < len(selections):
+                st.error("❗ Each metrics combination must be used only once. Please adjust duplicate selections.")
+                st.stop()
+            # Calculate score
+            score = 0.0
+            correct_count = 0
+            for d in game_data:
+                letter = d["letter"]
+                correct_combo = f"Beta: {d['beta']:.2f}, Debt%: {d['debt']:.2f}%, WACC: {d['wacc']:.2f}%"
+                if answers[letter] == correct_combo:
+                    score += 1.0
+                    correct_count += 1
+                else:
+                    score -= 0.5
+            # Round is finished
+            st.session_state.submitted = True
+            # Display score and feedback
+            total = len(game_data)
+            # Ensure at least one decimal place for score
+            score_display = f"{score:.1f}" if abs(score - int(score)) > 1e-9 else f"{int(score)}"
+            st.subheader(f"Results: {correct_count} out of {total} correct")
+            st.write(f"**Score:** {score_display}")
+            if correct_count == total:
+                st.success("🎉 Perfect! You matched all industries correctly.")
     else:
-        st.markdown(f"**Score:** {st.session_state.score}")
-        if st.session_state.perfect:
-            st.success("Perfect round! 🎉")
+        # Round submitted: show score results and enable new round in sidebar
+        # (The score was calculated when submitted was set to True)
+        # This block can display results if needed after rerun, but we handle results immediately above.
+        pass
