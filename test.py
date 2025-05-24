@@ -102,7 +102,7 @@ Transportation,1.03,7.72,27.91
 Transportation (Railroads),0.99,7.75,22.11
 Trucking,1.10,8.39,18.64
 Utility (General),0.39,5.2,43.84
-Utility (Water),0.68,6.15,36.96%"""
+Utility (Water),0.68,6.15,36.96"""
 
 @st.cache_data
 def load_data():
