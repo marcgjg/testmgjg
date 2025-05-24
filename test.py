@@ -331,7 +331,6 @@ if ss.game_active:
 
 # ---------- results (centered) ----------
 if ss.game_submitted:
-    st.markdown("---")
     lft, ctr, rgt = st.columns([1, 2, 1])
     with ctr:
         # Score display with visual styling
