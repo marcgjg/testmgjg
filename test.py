@@ -195,7 +195,14 @@ with st.sidebar:
 
 # ---------- main ----------
 st.title("🎯 Industry WACC Matching Game")
-st.markdown("---")
+
+# Add a description
+with st.expander("ℹ️ About this game", expanded=False):
+    st.markdown("""
+    This game consists of matching industries with their correct beta, leverage (D/(D+E)) and WACC.
+
+    The data used in this application are taken from Professor Damodaran's website.
+    """)
 
 if ss.game_active:
     df      = ss.df
