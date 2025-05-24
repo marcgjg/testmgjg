@@ -140,8 +140,11 @@ for k, v in [
 # ---------- sidebar ----------
 with st.sidebar:
     if not ss.game_active:
+        st.markdown("### 🎮 Game Setup")
         n = st.slider("Number of industries", 2, 10, 5)
-        if st.button("Start Game"):
+        st.markdown(f"*Selected: {n} industries*")
+        
+        if st.button("🚀 Start Game", type="primary", use_container_width=True):
             sample   = df_all.sample(n).reset_index(drop=True)
             letters  = list(string.ascii_uppercase[:n])
 
@@ -168,31 +171,81 @@ with st.sidebar:
 
             ss.game_active    = True
             ss.game_submitted = False
+            
+        st.markdown("---")
+        st.markdown("### 📖 How to Play")
+        st.markdown("""
+        1. **Observe** the 3D scatter plot
+        2. **Match** each lettered point to its correct financial metrics
+        3. **Submit** your answers to see results
+        
+        **Scoring**: +1 for correct, -0.5 for incorrect
+        """)
+        
+        if ss.game_submitted:
+            st.markdown("### 🎯 Latest Score")
+            st.metric("Score", f"{ss.score:.1f}/{len(ss.letters)}")
+    else:
+        st.markdown("### 🎮 Game in Progress")
+        completed = sum(1 for v in ss.answers.values() if v != "Select...")
+        st.progress(completed / len(ss.letters))
+        st.markdown(f"**Progress**: {completed}/{len(ss.letters)} completed")
 
 # ---------- main ----------
-st.title("🎯 Industry Matching Game")
+st.title("🎯 Industry WACC Matching Game")
+st.markdown("---")
 
 if ss.game_active:
     df      = ss.df
     letters = ss.letters
 
+    # Add a progress indicator
+    progress_text = f"📊 **Round in Progress** | Industries: {len(letters)} | Click points in the 3D chart and match them to metrics!"
+    st.markdown(f"<div style='text-align: center; padding: 10px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin-bottom: 20px;'>{progress_text}</div>", unsafe_allow_html=True)
+
     col_left, col_right = st.columns(2, gap="medium")
 
     # graph (left)
     with col_left:
+        # Create color scheme based on WACC values
+        colors = ['#FF6B6B' if wacc > 9 else '#4ECDC4' if wacc < 7 else '#45B7D1' 
+                  for wacc in df["WACC"]]
+        
         fig = go.Figure(go.Scatter3d(
             x=df["Beta"], y=df["Debt"], z=df["WACC"],
             text=letters, mode="markers+text", textposition="top center",
-            marker=dict(size=6, color="blue")))
-        fig.update_layout(scene=dict(
-            xaxis_title="Beta", yaxis_title="Debt %", zaxis_title="WACC %"),
-            height=600, margin=dict(l=0, r=0, t=20, b=0))
+            marker=dict(
+                size=12,
+                color=colors,
+                opacity=0.8,
+                line=dict(width=2, color='white')
+            ),
+            textfont=dict(size=14, color='white', family="Arial Black")
+        ))
+        
+        fig.update_layout(
+            scene=dict(
+                xaxis_title="Beta", 
+                yaxis_title="Debt %", 
+                zaxis_title="WACC %",
+                bgcolor='rgba(240,240,240,0.1)',
+                xaxis=dict(gridcolor='lightgray'),
+                yaxis=dict(gridcolor='lightgray'),
+                zaxis=dict(gridcolor='lightgray')
+            ),
+            height=600, 
+            margin=dict(l=0, r=0, t=20, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # dropdowns (right)
     with col_right:
         if not ss.game_submitted:
-            st.subheader("Match each industry to its metrics")
+            st.markdown("### 🎲 Match each industry to its metrics")
+            st.markdown("*Select the correct Beta, Debt%, and WACC combination for each lettered point.*")
+            
             for i, L in enumerate(letters):
                 industry = df.at[i, "Industry"]
                 current  = ss.answers[L]
@@ -200,45 +253,65 @@ if ss.game_active:
                 opts     = ["Select..."] + [
                     m for m in ss.metrics_opts if m not in used or m == current
                 ]
+                
+                # Add emoji indicators based on selection status
+                status_emoji = "✅" if current != "Select..." else "⭕"
+                
                 sel = st.selectbox(
-                    f"Point {L}: {industry}",
+                    f"{status_emoji} **Point {L}**: {industry}",
                     opts,
                     index=opts.index(current) if current in opts else 0,
                     key=f"sel_{L}"
                 )
                 ss.answers[L] = sel
 
-            # submit
-            if st.button("Submit Answers"):
-                if "Select..." in ss.answers.values():
-                    st.warning("Complete all selections first.")
-                elif len(set(ss.answers.values())) < len(letters):
-                    st.warning("Each metric combo can be chosen only once.")
-                else:
-                    correct = 0
-                    results = []
-                    for i, L in enumerate(letters):
-                        g = ss.answers[L]
-                        a = ss.true_map[L]
-                        mark = "✅" if g == a else "❌"
-                        if mark == "✅":
-                            correct += 1
-                        results.append((L, df.at[i, "Industry"], a, mark))
-                    ss.score   = correct - 0.5 * (len(letters) - correct)
-                    ss.results = results
-                    ss.game_submitted = True
-                    ss.game_active = False  # unlock sidebar immediately
-                    st.rerun()
+            # submit with improved styling
+            st.markdown("---")
+            col1, col2, col3 = st.columns([1,2,1])
+            with col2:
+                if st.button("🚀 Submit Answers", type="primary", use_container_width=True):
+                    if "Select..." in ss.answers.values():
+                        st.error("⚠️ Complete all selections first.")
+                    elif len(set(ss.answers.values())) < len(letters):
+                        st.error("⚠️ Each metric combo can be chosen only once.")
+                    else:
+                        correct = 0
+                        results = []
+                        for i, L in enumerate(letters):
+                            g = ss.answers[L]
+                            a = ss.true_map[L]
+                            mark = "✅" if g == a else "❌"
+                            if mark == "✅":
+                                correct += 1
+                            results.append((L, df.at[i, "Industry"], a, mark))
+                        ss.score   = correct - 0.5 * (len(letters) - correct)
+                        ss.results = results
+                        ss.game_submitted = True
+                        ss.game_active = False  # unlock sidebar immediately
+                        st.rerun()
 
 # ---------- results (centered) ----------
 if ss.game_submitted:
+    st.markdown("---")
     lft, ctr, rgt = st.columns([1, 2, 1])
     with ctr:
-        st.subheader(f"Score: {ss.score:.2f}")
+        # Score display with visual styling
+        score_color = "#28a745" if ss.score >= len(ss.letters) * 0.8 else "#ffc107" if ss.score >= 0 else "#dc3545"
+        st.markdown(f"<div style='text-align: center; padding: 20px; background-color: {score_color}; color: white; border-radius: 15px; margin-bottom: 20px;'><h2>🎯 Final Score: {ss.score:.1f}/{len(ss.letters)}</h2></div>", unsafe_allow_html=True)
+        
         if ss.results and len(ss.results) == len(ss.letters) \
            and all(r[3] == "✅" for r in ss.results):
-            st.success("Perfect round! 🎉")
+            st.balloons()
+            st.markdown("### 🎉 Perfect Round! Outstanding!")
 
-        st.subheader("Correct Answers")
+        st.markdown("### 📋 Detailed Results")
         for L, industry, metrics, mark in ss.results:
-            st.write(f"{mark} Point {L} ({industry}) → {metrics}")
+            color = "#d4edda" if mark == "✅" else "#f8d7da"
+            border_color = "#28a745" if mark == "✅" else "#dc3545"
+            st.markdown(f"""
+            <div style='padding: 10px; margin: 5px 0; background-color: {color}; 
+                        border-left: 4px solid {border_color}; border-radius: 5px;'>
+                <strong>{mark} Point {L}</strong> ({industry})<br>
+                <small>{metrics}</small>
+            </div>
+            """, unsafe_allow_html=True)
