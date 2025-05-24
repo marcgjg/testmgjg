@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import random, string
 from io import StringIO
 
-st.set_page_config(page_title="WACC Matching Game", layout="wide")
+st.set_page_config(page_title="Industry Matching Game", layout="wide")
 
 # ---------- data load ----------
 CSV = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
@@ -193,7 +193,7 @@ with st.sidebar:
         st.markdown(f"**Progress**: {completed}/{len(ss.letters)} completed")
 
 # ---------- main ----------
-st.title("🎯 Industry WACC Matching Game")
+st.title("🎯 Industry Matching Game")
 st.markdown("---")
 
 if ss.game_active:
