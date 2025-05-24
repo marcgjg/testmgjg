@@ -104,7 +104,6 @@ Trucking,1.10,8.39,18.64
 Utility (General),0.39,5.2,43.84
 Utility (Water),0.68,6.15,36.96%"""
 
-
 @st.cache_data
 def load_data():
     try:
@@ -130,12 +129,12 @@ st.title("🎯 Industry Matching Game")
 # Add a description
 with st.expander("ℹ️ About this tool", expanded=False):
     st.markdown("""
-    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong gues. Good luck!
+    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong guess. Good luck!
 
     The data are sourced from Professor Damodaran's website.
     """)
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     if not st.session_state.game_active:
         num_points = st.slider("Number of industries", 2, 10, 5)
@@ -167,55 +166,68 @@ with st.sidebar:
 if st.session_state.get("game_active"):
     df = st.session_state.df
     letters = st.session_state.letters
-    st.plotly_chart(go.Figure(go.Scatter3d(
-        x=df["Beta"], y=df["Debt"], z=df["WACC"],
-        text=letters, mode="markers+text", textposition="top center",
-        marker=dict(size=6, color="blue")
-    )).update_layout(
-        scene=dict(xaxis_title="Beta", yaxis_title="Debt %", zaxis_title="WACC %"),
-        height=600, margin=dict(l=0, r=0, t=20, b=0)
-    ), use_container_width=True)
 
-    if not st.session_state.game_submitted:
-        st.subheader("Match each industry to its correct metrics")
-        taken = set()
-        for i, L in enumerate(letters):
-            ind = df.at[i, "Industry"]
-            current = st.session_state.answers.get(L, "Select metrics...")
-            others = set(v for k, v in st.session_state.answers.items() if k != L)
-            available = [m for m in st.session_state.metrics if m not in others or m == current]
-            options = ["Select metrics..."] + available
-            sel = st.selectbox(f"Point {L}: {ind}", options, index=options.index(current), key=f"sel_{L}")
-            st.session_state.answers[L] = sel
+    # During an active round: scatterplot on left, dropdowns on right
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.plotly_chart(
+            go.Figure(
+                go.Scatter3d(
+                    x=df["Beta"], y=df["Debt"], z=df["WACC"],
+                    text=letters, mode="markers+text", textposition="top center",
+                    marker=dict(size=6, color="blue")
+                )
+            ).update_layout(
+                scene=dict(xaxis_title="Beta", yaxis_title="Debt %", zaxis_title="WACC %"),
+                height=600, margin=dict(l=0, r=0, t=20, b=0)
+            ),
+            use_container_width=True
+        )
+    with col_right:
+        if not st.session_state.game_submitted:
+            st.subheader("Match each industry to its correct metrics")
+            taken = set()
+            for i, L in enumerate(letters):
+                ind = df.at[i, "Industry"]
+                current = st.session_state.answers.get(L, "Select metrics...")
+                others = set(v for k, v in st.session_state.answers.items() if k != L)
+                available = [m for m in st.session_state.metrics if m not in others or m == current]
+                options = ["Select metrics..."] + available
+                sel = st.selectbox(f"Point {L}: {ind}", options, index=options.index(current), key=f"sel_{L}")
+                st.session_state.answers[L] = sel
+            if st.button("Submit Answers"):
+                if "Select metrics..." in st.session_state.answers.values():
+                    st.warning("Please assign all metrics before submitting.")
+                elif len(set(st.session_state.answers.values())) < len(letters):
+                    st.warning("Each metric can be used only once.")
+                else:
+                    score = 0
+                    results = []
+                    for i, L in enumerate(letters):
+                        correct = st.session_state.mapping[L]
+                        guess = st.session_state.answers[L]
+                        if guess == correct:
+                            score += 1
+                            results.append((L, "✅", correct))
+                        else:
+                            score -= 0.5
+                            results.append((L, "❌", correct))
+                    st.session_state.score = score
+                    st.session_state.results = results
+                    st.session_state.game_submitted = True
+        else:
+            st.write("")  # empty placeholder in right column after submission
 
-        if st.button("Submit Answers"):
-            if "Select metrics..." in st.session_state.answers.values():
-                st.warning("Please assign all metrics before submitting.")
-            elif len(set(st.session_state.answers.values())) < len(letters):
-                st.warning("Each metric can be used only once.")
-            else:
-                score = 0
-                results = []
-                for i, L in enumerate(letters):
-                    correct = st.session_state.mapping[L]
-                    guess = st.session_state.answers[L]
-                    if guess == correct:
-                        score += 1
-                        results.append((L, "✅", correct))
-                    else:
-                        score -= 0.5
-                        results.append((L, "❌", correct))
-                st.session_state.score = score
-                st.session_state.results = results
-                st.session_state.game_submitted = True
-
-    else:
+    # After round submission: score and answers centered below both columns
+    if st.session_state.game_submitted:
         score = st.session_state.score
         results = st.session_state.results
-        st.subheader(f"Score: {score:.2f}")
-        if all(r[1] == "✅" for r in results):
-            st.success("Perfect score! 🎉")
-        st.subheader("Correct Answers:")
-        for i, (L, mark, val) in enumerate(results):
-            industry = st.session_state.df.at[i, "Industry"]
-            st.write(f"{mark} Point {L} ({industry}) → {val}")
+        col_space_left, col_center, col_space_right = st.columns([1, 2, 1])
+        with col_center:
+            st.subheader(f"Score: {score:.2f}")
+            if all(r[1] == "✅" for r in results):
+                st.success("Perfect score! 🎉")
+            st.subheader("Correct Answers:")
+            for i, (L, mark, val) in enumerate(results):
+                industry = st.session_state.df.at[i, "Industry"]
+                st.write(f"{mark} Point {L} ({industry}) → {val}")
