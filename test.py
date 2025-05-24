@@ -144,10 +144,17 @@ with st.sidebar:
             letters  = list(string.ascii_uppercase[:n])
 
             # metric strings in TRUE order
-            metrics_true = [
-                f"Beta: {r['Beta']:.2f}, Debt%: {r['Debt']:.2f}%, WACC: {r['WACC']:.2f}%"
-                for _, r in sample.iterrows()
-            ]
+            metrics = []
+            for _, r in sample.iterrows():
+                beta  = float(r["Beta"])
+                wacc  = float(r["WACC"])
+                debt  = float(r["Debt"])
+                if debt <= 1:          # convert 0–1 ratio to 0–100 %
+                    debt *= 100
+                metrics.append(
+                    f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
+                )
+
             metrics_opts = metrics_true.copy()
             random.shuffle(metrics_opts)
 
