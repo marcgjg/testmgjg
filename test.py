@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import random, string
 from io import StringIO
 
-st.set_page_config(page_title="Industry Matching Game", layout="wide")
+st.set_page_config(page_title="WACC Matching Game", layout="wide")
 
 # ---------- data load ----------
 CSV = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
@@ -128,7 +128,7 @@ for k, v in [
     ("game_submitted", False),
     ("df", None),
     ("letters", []),
-    ("metrics_opts", []),
+    ("industries_opts", []),
     ("true_map", {}),
     ("answers", {}),
     ("results", []),
@@ -160,13 +160,14 @@ with st.sidebar:
                     f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
                 )
 
-            metrics_opts = metrics.copy()
-            random.shuffle(metrics_opts)
+            industries = sample["Industry"].tolist()
+            industries_opts = industries.copy()
+            random.shuffle(industries_opts)
 
             ss.df          = sample
             ss.letters     = letters
-            ss.metrics_opts = metrics_opts
-            ss.true_map    = {L: metrics[i] for i, L in enumerate(letters)}
+            ss.industries_opts = industries_opts
+            ss.true_map    = {L: industries[i] for i, L in enumerate(letters)}
             ss.answers     = {L: "Select..." for L in letters}
 
             ss.game_active    = True
@@ -177,7 +178,7 @@ with st.sidebar:
         st.markdown("### 📖 How to Play")
         st.markdown("""
         1. **Observe** the 3D scatter plot
-        2. **Match** each lettered point to its correct financial metrics
+        2. **Match** each lettered point to its correct industry
         3. **Submit** your answers to see results
         
         **Scoring**: +1 for correct, -0.5 for incorrect
@@ -193,22 +194,15 @@ with st.sidebar:
         st.markdown(f"**Progress**: {completed}/{len(ss.letters)} completed")
 
 # ---------- main ----------
-st.title("🎯 Industry Matching Game")
-
-# Add a description
-with st.expander("ℹ️ About this game", expanded=False):
-    st.markdown("""
-    This game consists of matching industries with their correct beta, leverage (D/(D+E)) and WACC.
-
-    The data used in this application are taken from Professor Damodaran's website.
-    """)
+st.title("🎯 Industry WACC Matching Game")
+st.markdown("---")
 
 if ss.game_active:
     df      = ss.df
     letters = ss.letters
 
     # Add a progress indicator
-    progress_text = f"📊 **Round in Progress** | Industries: {len(letters)} | Click points in the 3D chart and match them to metrics!"
+    progress_text = f"📊 **Round in Progress** | Industries: {len(letters)} | Match the financial metrics to their industries!"
     st.markdown(f"<div style='text-align: center; padding: 10px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin-bottom: 20px;'>{progress_text}</div>", unsafe_allow_html=True)
 
     col_left, col_right = st.columns(2, gap="medium")
@@ -275,22 +269,28 @@ if ss.game_active:
     # dropdowns (right)
     with col_right:
         if not ss.game_submitted:
-            st.markdown("### 🎲 Match each industry to its metrics")
-            st.markdown("*Select the correct Beta, Debt%, and WACC combination for each lettered point.*")
+            st.markdown("### 🎲 Match each metric to its industry")
+            st.markdown("*Select the correct industry for each lettered point's Beta, Debt%, and WACC combination.*")
             
             for i, L in enumerate(letters):
-                industry = df.at[i, "Industry"]
+                beta  = float(df.at[i, "Beta"])
+                wacc  = float(df.at[i, "WACC"])
+                debt  = float(df.at[i, "Debt"])
+                if debt <= 1:
+                    debt *= 100
+                metric_display = f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
+                
                 current  = ss.answers[L]
                 used     = {v for k, v in ss.answers.items() if k != L}
                 opts     = ["Select..."] + [
-                    m for m in ss.metrics_opts if m not in used or m == current
+                    ind for ind in ss.industries_opts if ind not in used or ind == current
                 ]
                 
                 # Add emoji indicators based on selection status only
                 status_emoji = "🔵" if current != "Select..." else "⚪"
                 
                 sel = st.selectbox(
-                    f"{status_emoji} **Point {L}**: {industry}",
+                    f"{status_emoji} **Point {L}**: {metric_display}",
                     opts,
                     index=opts.index(current) if current in opts else 0,
                     key=f"sel_{L}"
@@ -324,7 +324,7 @@ if ss.game_active:
 
 # ---------- results (centered) ----------
 if ss.game_submitted:
-    #st.markdown("---")
+    st.markdown("---")
     lft, ctr, rgt = st.columns([1, 2, 1])
     with ctr:
         # Score display with visual styling
@@ -339,14 +339,23 @@ if ss.game_submitted:
             st.markdown("### 🎉 Perfect Round! Outstanding!")
 
         st.markdown("### 📋 Detailed Results")
-        for L, industry, metrics, mark in ss.results:
+        for L, industry, correct_industry, mark in ss.results:
             color = "#d4edda" if mark == "✅" else "#f8d7da"
             border_color = "#28a745" if mark == "✅" else "#dc3545"
+            
+            # Get the metrics for this point
+            beta  = float(df.at[letters.index(L), "Beta"])
+            wacc  = float(df.at[letters.index(L), "WACC"])
+            debt  = float(df.at[letters.index(L), "Debt"])
+            if debt <= 1:
+                debt *= 100
+            metric_display = f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
+            
             st.markdown(f"""
             <div style='padding: 10px; margin: 5px 0; background-color: {color}; 
                         border-left: 4px solid {border_color}; border-radius: 5px;'>
-                <strong>{mark} Point {L}</strong> ({industry})<br>
-                <small>{metrics}</small>
+                <strong>{mark} Point {L}</strong> ({metric_display})<br>
+                <small>Correct Industry: {correct_industry}</small>
             </div>
             """, unsafe_allow_html=True)
 
