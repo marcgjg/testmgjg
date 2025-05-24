@@ -231,3 +231,4 @@ if st.session_state.get("game_active"):
             for i, (L, mark, val) in enumerate(results):
                 industry = st.session_state.df.at[i, "Industry"]
                 st.write(f"{mark} Point {L} ({industry}) → {val}")
+
