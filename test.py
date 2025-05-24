@@ -166,13 +166,9 @@ with st.sidebar:
 
             ss.game_active    = True
             ss.game_submitted = False
-    elif ss.game_submitted:
-        if st.button("Start New Round"):
-            ss.game_active = False
-            ss.game_submitted = False
 
 # ---------- main ----------
-st.title("🎯 Industry Matching Game")
+st.title("🎯 Industry WACC Matching Game")
 
 if ss.game_active:
     df      = ss.df
