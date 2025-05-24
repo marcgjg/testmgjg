@@ -6,15 +6,6 @@ from io import StringIO
 
 st.set_page_config(page_title="WACC Matching Game", layout="wide")
 
-# Add a description
-with st.expander("ℹ️ About this tool", expanded=False):
-    st.markdown("""
-    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. The data are sourced from Professor Damodaran's website.
-
-    Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong gues. Good luck!
-    """)
-
-
 # Load data from Damodaran or fallback
 CSV_URL = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
 FALLBACK_CSV = """Industry Name,Beta,Cost of Capital,D/(D+E)
@@ -134,7 +125,15 @@ if "game_active" not in st.session_state:
 if "game_submitted" not in st.session_state:
     st.session_state.game_submitted = False
 
-st.title("🎯 Industry WACC Matching Game")
+st.title("🎯 Industry Matching Game")
+
+# Add a description
+with st.expander("ℹ️ About this tool", expanded=False):
+    st.markdown("""
+    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. The data are sourced from Professor Damodaran's website.
+
+    Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong gues. Good luck!
+    """)
 
 # Sidebar
 with st.sidebar:
