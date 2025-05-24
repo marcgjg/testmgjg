@@ -121,18 +121,6 @@ def load_data():
 
 df_all = load_data()
 
-# Add a description
-with st.expander("ℹ️ About this tool", expanded=False):
-    st.markdown("""
-    This tool helps you visualize the **Net Present Value (NPV)** and **Internal Rate of Return (IRR)** for a series of cash flows.
-    
-    - **NPV (Net Present Value)**: Calculates the present value of future cash flows minus the initial investment
-    - **IRR (Internal Rate of Return)**: The discount rate at which the NPV equals zero
-    
-    Enter your cash flows as comma-separated values, with the initial investment as a negative number.
-    """)
-
-
 # ---------- session init ----------
 ss = st.session_state
 for k, v in [
@@ -207,6 +195,17 @@ with st.sidebar:
 # ---------- main ----------
 st.title("🎯 Industry Matching Game")
 st.markdown("---")
+
+# Add a description
+with st.expander("ℹ️ About this tool", expanded=False):
+    st.markdown("""
+    This tool helps you visualize the **Net Present Value (NPV)** and **Internal Rate of Return (IRR)** for a series of cash flows.
+    
+    - **NPV (Net Present Value)**: Calculates the present value of future cash flows minus the initial investment
+    - **IRR (Internal Rate of Return)**: The discount rate at which the NPV equals zero
+    
+    Enter your cash flows as comma-separated values, with the initial investment as a negative number.
+    """)
 
 if ss.game_active:
     df      = ss.df
