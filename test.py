@@ -102,7 +102,7 @@ Transportation,1.03,7.72,27.91
 Transportation (Railroads),0.99,7.75,22.11
 Trucking,1.10,8.39,18.64
 Utility (General),0.39,5.2,43.84
-Utility (Water),0.68,6.15,36.96"""
+Utility (Water),0.68,6.15,36.96%"""
 
 @st.cache_data
 def load_data():
@@ -115,6 +115,8 @@ def load_data():
     except Exception:
         df = pd.read_csv(StringIO(FALLBACK))
         df.columns = ["Industry", "Beta", "WACC", "Debt"]
+        df["WACC"] = df["WACC"].astype(str).str.rstrip("%").astype(float)
+        df["Debt"] = df["Debt"].astype(str).str.rstrip("%").astype(float)
     return df
 
 df_all = load_data()
@@ -226,6 +228,7 @@ if ss.game_active:
                     ss.results = results
                     ss.game_submitted = True
                     ss.game_active = False  # unlock sidebar immediately
+                    st.rerun()
 
 # ---------- results (centered) ----------
 if ss.game_submitted:
