@@ -344,9 +344,9 @@ if ss.game_submitted:
             border_color = "#28a745" if mark == "✅" else "#dc3545"
             
             # Get the metrics for this point
-            beta  = float(df.at[letters.index(L), "Beta"])
-            wacc  = float(df.at[letters.index(L), "WACC"])
-            debt  = float(df.at[letters.index(L), "Debt"])
+            beta  = float(ss.df.at[ss.letters.index(L), "Beta"])
+            wacc  = float(ss.df.at[ss.letters.index(L), "WACC"])
+            debt  = float(ss.df.at[ss.letters.index(L), "Debt"])
             if debt <= 1:
                 debt *= 100
             metric_display = f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
