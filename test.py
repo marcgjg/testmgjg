@@ -130,9 +130,9 @@ st.title("🎯 Industry Matching Game")
 # Add a description
 with st.expander("ℹ️ About this tool", expanded=False):
     st.markdown("""
-    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. The data are sourced from Professor Damodaran's website.
+    This tool gives you a feeling about how the beta, cost of capital and leverage (D/(D+E)) vary across industries. Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong gues. Good luck!
 
-    Choose the number of industries and then guess their metrics. You obtain 1 point for a correct guess and you lose 0.5 points for a wrong gues. Good luck!
+    The data are sourced from Professor Damodaran's website.
     """)
 
 # Sidebar
