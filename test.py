@@ -171,6 +171,7 @@ with st.sidebar:
 
             ss.game_active    = True
             ss.game_submitted = False
+            ss.balloons_shown = False  # Reset balloons flag for new game
             
         st.markdown("---")
         st.markdown("### 📖 How to Play")
@@ -228,36 +229,39 @@ if ss.game_active:
                 xaxis_title="Beta", 
                 yaxis_title="Debt %", 
                 zaxis_title="WACC %",
-                bgcolor='rgba(240,240,240,0.1)',
                 xaxis=dict(
-                    gridcolor='gray',
-                    gridwidth=1,
+                    gridcolor='#999999',
+                    gridwidth=2,
                     showgrid=True,
                     zeroline=True,
-                    zerolinecolor='black',
-                    zerolinewidth=2
+                    zerolinecolor='#333333',
+                    zerolinewidth=3,
+                    showbackground=True,
+                    backgroundcolor='rgba(250,250,250,0.8)'
                 ),
                 yaxis=dict(
-                    gridcolor='gray',
-                    gridwidth=1,
+                    gridcolor='#999999',
+                    gridwidth=2,
                     showgrid=True,
                     zeroline=True,
-                    zerolinecolor='black',
-                    zerolinewidth=2
+                    zerolinecolor='#333333',
+                    zerolinewidth=3,
+                    showbackground=True,
+                    backgroundcolor='rgba(250,250,250,0.8)'
                 ),
                 zaxis=dict(
-                    gridcolor='gray',
-                    gridwidth=1,
+                    gridcolor='#999999',
+                    gridwidth=2,
                     showgrid=True,
                     zeroline=True,
-                    zerolinecolor='black',
-                    zerolinewidth=2
+                    zerolinecolor='#333333',
+                    zerolinewidth=3,
+                    showbackground=True,
+                    backgroundcolor='rgba(250,250,250,0.8)'
                 )
             ),
             height=600, 
-            margin=dict(l=0, r=0, t=20, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
+            margin=dict(l=0, r=0, t=20, b=0)
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -322,7 +326,9 @@ if ss.game_submitted:
         
         if ss.results and len(ss.results) == len(ss.letters) \
            and all(r[3] == "✅" for r in ss.results):
-            st.balloons()
+            if not hasattr(ss, 'balloons_shown') or not ss.balloons_shown:
+                st.balloons()
+                ss.balloons_shown = True
             st.markdown("### 🎉 Perfect Round! Outstanding!")
 
         st.markdown("### 📋 Detailed Results")
