@@ -172,7 +172,7 @@ with st.sidebar:
             ss.game_submitted = False
 
 # ---------- main ----------
-st.title("🎯 Industry WACC Matching Game")
+st.title("🎯 Industry Matching Game")
 
 if ss.game_active:
     df      = ss.df
