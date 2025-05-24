@@ -155,13 +155,13 @@ with st.sidebar:
                     f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
                 )
 
-            metrics_opts = metrics_true.copy()
+            metrics_opts = metrics.copy()
             random.shuffle(metrics_opts)
 
             ss.df          = sample
             ss.letters     = letters
             ss.metrics_opts = metrics_opts
-            ss.true_map    = {L: metrics_true[i] for i, L in enumerate(letters)}
+            ss.true_map    = {L: metrics[i] for i, L in enumerate(letters)}
             ss.answers     = {L: "Select..." for L in letters}
 
             ss.game_active    = True
