@@ -194,7 +194,7 @@ with st.sidebar:
 
 # ---------- main ----------
 st.title("🎯 Industry Matching Game")
-st.markdown("---")
+#st.markdown("---")
 
 # Add a description
 with st.expander("ℹ️ About this game", expanded=False):
