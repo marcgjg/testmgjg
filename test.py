@@ -4,11 +4,11 @@ import plotly.graph_objects as go
 import random, string
 from io import StringIO
 
-st.set_page_config(page_title="Industry Matching Game", layout="wide")
+st.set_page_config(page_title="WACC Matching Game", layout="wide")
 
-# Load data from Damodaran or fallback
-CSV_URL = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
-FALLBACK_CSV = """Industry Name,Beta,Cost of Capital,D/(D+E)
+# ---------- data load ----------
+CSV = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
+FALLBACK = """Industry Name,Beta,Cost of Capital,D/(D+E)
 Advertising,1.34,9.22,20.76
 Aerospace/Defense,0.90,7.68,18.56
 Air Transport,1.24,7.29,51.65
@@ -107,117 +107,132 @@ Utility (Water),0.68,6.15,36.96%"""
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv(CSV_URL)
+        df = pd.read_csv(CSV)
+        df = df[["Industry Name", "Beta", "Cost of Capital", "D/(D+E)"]]
+        df.columns = ["Industry", "Beta", "WACC", "Debt"]
+        df["WACC"] = df["WACC"].str.rstrip("%").astype(float)
+        df["Debt"] = df["Debt"].str.rstrip("%").astype(float)
     except Exception:
-        df = pd.read_csv(StringIO(FALLBACK_CSV))
-    df = df[["Industry Name", "Beta", "Cost of Capital", "D/(D+E)"]].copy()
-    df.columns = ["Industry", "Beta", "WACC", "Debt"]
-    df["WACC"] = df["WACC"].astype(str).str.rstrip("%").astype(float)
-    df["Debt"] = df["Debt"].astype(str).str.rstrip("%").astype(float)
+        df = pd.read_csv(StringIO(FALLBACK))
+        df.columns = ["Industry", "Beta", "WACC", "Debt"]
     return df
 
-df_full = load_data()
+df_all = load_data()
 
-# Initialize session state
-if "game_active" not in st.session_state:
-    st.session_state.game_active = False
-if "game_submitted" not in st.session_state:
-    st.session_state.game_submitted = False
+# ---------- session init ----------
+ss = st.session_state
+for k, v in [
+    ("game_active", False),
+    ("game_submitted", False),
+    ("df", None),
+    ("letters", []),
+    ("metrics_opts", []),
+    ("true_map", {}),
+    ("answers", {}),
+    ("results", []),
+    ("score", 0.0),
+]:
+    if k not in ss:
+        ss[k] = v
 
-st.title("🎯 Industry Matching Game")
-
-# Add a description
-with st.expander("ℹ️ About this tool", expanded=False):
-    st.markdown("""
-    This tool gives you a feeling about how the beta, cost of capital and 
-    leverage (D/(D+E)) vary across industries. Choose the number of industries and 
-    then guess their metrics. You obtain 1 point for a correct guess and you lose 
-    0.5 points for a wrong gues. Good luck!
-
-    The data are sourced from Professor Damodaran's website.
-    """)
-
-# Sidebar
+# ---------- sidebar ----------
 with st.sidebar:
-    if not st.session_state.game_active:
-        num_points = st.slider("Number of industries", 2, 10, 5)
+    if not ss.game_active:
+        n = st.slider("Number of industries", 2, 10, 5)
         if st.button("Start Game"):
-            sample = df_full.sample(num_points).reset_index(drop=True)
-            letters = list(string.ascii_uppercase[:num_points])
-            metrics = [
+            sample   = df_all.sample(n).reset_index(drop=True)
+            letters  = list(string.ascii_uppercase[:n])
+
+            # metric strings in TRUE order
+            metrics_true = [
                 f"Beta: {r['Beta']:.2f}, Debt%: {r['Debt']:.2f}%, WACC: {r['WACC']:.2f}%"
                 for _, r in sample.iterrows()
             ]
-            random.shuffle(metrics)
-            st.session_state.df = sample
-            st.session_state.letters = letters
-            st.session_state.metrics = metrics
-            st.session_state.mapping = {
-                letters[i]: metrics[i] for i in range(num_points)
-            }
-            st.session_state.answers = {
-                L: "Select metrics..." for L in letters
-            }
-            st.session_state.game_active = True
-            st.session_state.game_submitted = False
-    elif st.session_state.game_submitted:
+            metrics_opts = metrics_true.copy()
+            random.shuffle(metrics_opts)
+
+            ss.df          = sample
+            ss.letters     = letters
+            ss.metrics_opts = metrics_opts
+            ss.true_map    = {L: metrics_true[i] for i, L in enumerate(letters)}
+            ss.answers     = {L: "Select..." for L in letters}
+
+            ss.game_active    = True
+            ss.game_submitted = False
+    elif ss.game_submitted:
         if st.button("Start New Round"):
-            st.session_state.game_active = False
-            st.session_state.game_submitted = False
+            ss.game_active = False
+            ss.game_submitted = False
 
-# Game UI
-if st.session_state.get("game_active"):
-    df = st.session_state.df
-    letters = st.session_state.letters
-    st.plotly_chart(go.Figure(go.Scatter3d(
-        x=df["Beta"], y=df["Debt"], z=df["WACC"],
-        text=letters, mode="markers+text", textposition="top center",
-        marker=dict(size=6, color="blue")
-    )).update_layout(
-        scene=dict(xaxis_title="Beta", yaxis_title="Debt %", zaxis_title="WACC %"),
-        height=600, margin=dict(l=0, r=0, t=20, b=0)
-    ), use_container_width=True)
+# ---------- main ----------
+st.title("🎯 Industry WACC Matching Game")
 
-    if not st.session_state.game_submitted:
-        st.subheader("Match each industry to its correct metrics")
-        taken = set()
-        for i, L in enumerate(letters):
-            ind = df.at[i, "Industry"]
-            current = st.session_state.answers.get(L, "Select metrics...")
-            others = set(v for k, v in st.session_state.answers.items() if k != L)
-            available = [m for m in st.session_state.metrics if m not in others or m == current]
-            options = ["Select metrics..."] + available
-            sel = st.selectbox(f"Point {L}: {ind}", options, index=options.index(current), key=f"sel_{L}")
-            st.session_state.answers[L] = sel
+if ss.game_active:
+    df      = ss.df
+    letters = ss.letters
 
-        if st.button("Submit Answers"):
-            if "Select metrics..." in st.session_state.answers.values():
-                st.warning("Please assign all metrics before submitting.")
-            elif len(set(st.session_state.answers.values())) < len(letters):
-                st.warning("Each metric can be used only once.")
-            else:
-                score = 0
-                results = []
-                for i, L in enumerate(letters):
-                    correct = st.session_state.mapping[L]
-                    guess = st.session_state.answers[L]
-                    if guess == correct:
-                        score += 1
-                        results.append((L, guess, correct, "✅"))
-                    else:
-                        score -= 0.5
-                        results.append((L, guess, correct, "❌"))
-                st.session_state.score = score
-                st.session_state.results = results
-                st.session_state.game_submitted = True
+    col_left, col_right = st.columns(2, gap="medium")
 
-    else:
-        score = st.session_state.score
-        results = st.session_state.get("results", [])
-        st.subheader(f"Score: {score:.2f}")
-        if results and len(results) == len(letters) and all(len(r) > 3 and r[3] == "✅" for r in results):
-            st.success("Perfect score! 🎉")
-        st.subheader("Correct Answers:")
-        for i, (L, guess, correct, mark) in enumerate(results):
-            industry = st.session_state.df.at[i, "Industry"]
-            st.write(f"{mark} Point {L} ({industry}) → {correct}")
+    # graph (left)
+    with col_left:
+        fig = go.Figure(go.Scatter3d(
+            x=df["Beta"], y=df["Debt"], z=df["WACC"],
+            text=letters, mode="markers+text", textposition="top center",
+            marker=dict(size=6, color="blue")))
+        fig.update_layout(scene=dict(
+            xaxis_title="Beta", yaxis_title="Debt %", zaxis_title="WACC %"),
+            height=600, margin=dict(l=0, r=0, t=20, b=0))
+        st.plotly_chart(fig, use_container_width=True)
+
+    # dropdowns (right)
+    with col_right:
+        if not ss.game_submitted:
+            st.subheader("Match each industry to its metrics")
+            for i, L in enumerate(letters):
+                industry = df.at[i, "Industry"]
+                current  = ss.answers[L]
+                used     = {v for k, v in ss.answers.items() if k != L}
+                opts     = ["Select..."] + [
+                    m for m in ss.metrics_opts if m not in used or m == current
+                ]
+                sel = st.selectbox(
+                    f"Point {L}: {industry}",
+                    opts,
+                    index=opts.index(current) if current in opts else 0,
+                    key=f"sel_{L}"
+                )
+                ss.answers[L] = sel
+
+            # submit
+            if st.button("Submit Answers"):
+                if "Select..." in ss.answers.values():
+                    st.warning("Complete all selections first.")
+                elif len(set(ss.answers.values())) < len(letters):
+                    st.warning("Each metric combo can be chosen only once.")
+                else:
+                    correct = 0
+                    results = []
+                    for i, L in enumerate(letters):
+                        g = ss.answers[L]
+                        a = ss.true_map[L]
+                        mark = "✅" if g == a else "❌"
+                        if mark == "✅":
+                            correct += 1
+                        results.append((L, df.at[i, "Industry"], a, mark))
+                    ss.score   = correct - 0.5 * (len(letters) - correct)
+                    ss.results = results
+                    ss.game_submitted = True
+                    ss.game_active = False  # unlock sidebar immediately
+
+# ---------- results (centered) ----------
+if ss.game_submitted:
+    lft, ctr, rgt = st.columns([1, 2, 1])
+    with ctr:
+        st.subheader(f"Score: {ss.score:.2f}")
+        if ss.results and len(ss.results) == len(ss.letters) \
+           and all(r[3] == "✅" for r in ss.results):
+            st.success("Perfect round! 🎉")
+
+        st.subheader("Correct Answers")
+        for L, industry, metrics, mark in ss.results:
+            st.write(f"{mark} Point {L} ({industry}) → {metrics}")
