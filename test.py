@@ -194,7 +194,6 @@ with st.sidebar:
 
 # ---------- main ----------
 st.title("🎯 Industry Matching Game")
-#st.markdown("---")
 
 # Add a description
 with st.expander("ℹ️ About this game", expanded=False):
@@ -325,7 +324,7 @@ if ss.game_active:
 
 # ---------- results (centered) ----------
 if ss.game_submitted:
-    st.markdown("---")
+    #st.markdown("---")
     lft, ctr, rgt = st.columns([1, 2, 1])
     with ctr:
         # Score display with visual styling
