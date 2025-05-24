@@ -229,9 +229,30 @@ if ss.game_active:
                 yaxis_title="Debt %", 
                 zaxis_title="WACC %",
                 bgcolor='rgba(240,240,240,0.1)',
-                xaxis=dict(gridcolor='lightgray'),
-                yaxis=dict(gridcolor='lightgray'),
-                zaxis=dict(gridcolor='lightgray')
+                xaxis=dict(
+                    gridcolor='gray',
+                    gridwidth=1,
+                    showgrid=True,
+                    zeroline=True,
+                    zerolinecolor='black',
+                    zerolinewidth=2
+                ),
+                yaxis=dict(
+                    gridcolor='gray',
+                    gridwidth=1,
+                    showgrid=True,
+                    zeroline=True,
+                    zerolinecolor='black',
+                    zerolinewidth=2
+                ),
+                zaxis=dict(
+                    gridcolor='gray',
+                    gridwidth=1,
+                    showgrid=True,
+                    zeroline=True,
+                    zerolinecolor='black',
+                    zerolinewidth=2
+                )
             ),
             height=600, 
             margin=dict(l=0, r=0, t=20, b=0),
@@ -315,3 +336,12 @@ if ss.game_submitted:
                 <small>{metrics}</small>
             </div>
             """, unsafe_allow_html=True)
+
+# ---------- footer ----------
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #666; font-size: 14px; padding: 20px;'>"
+    "Industry Matching Game | Developed by Prof. Marc Goergen with the help of ChatGPT and Claude"
+    "</div>", 
+    unsafe_allow_html=True
+)
