@@ -279,8 +279,8 @@ if ss.game_active:
                     m for m in ss.metrics_opts if m not in used or m == current
                 ]
                 
-                # Add emoji indicators based on selection status
-                status_emoji = "✅" if current != "Select..." else "⭕"
+                # Add emoji indicators based on selection status only
+                status_emoji = "🔵" if current != "Select..." else "⚪"
                 
                 sel = st.selectbox(
                     f"{status_emoji} **Point {L}**: {industry}",
