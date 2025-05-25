@@ -1,375 +1,406 @@
 import streamlit as st
-import pandas as pd
+import numpy as np
+import numpy_financial as npf
 import plotly.graph_objects as go
-import random, string
-from io import StringIO
+from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Industry Matching Game", layout="wide")
+# Set the page layout to wide and add a custom title/icon
+st.set_page_config(
+    page_title="NPV/IRR Calculator",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ---------- data load ----------
-CSV = "https://www.stern.nyu.edu/~adamodar/pc/datasets/wacc.csv"
-FALLBACK = """Industry Name,Beta,Cost of Capital,D/(D+E)
-Advertising,1.34,9.22,20.76
-Aerospace/Defense,0.90,7.68,18.56
-Air Transport,1.24,7.29,51.65
-Apparel,0.99,7.44,31.45
-Auto & Truck,1.62,10.34,18.3
-Auto Parts,1.23,8.09,32.36
-Bank (Money Center),0.88,5.64,64.69
-Banks (Regional),0.52,5.69,37.62
-Beverage (Alcoholic),0.61,6.55,23.35
-Beverage (Soft),0.57,6.59,16.48
-Broadcasting,0.92,6.03,59.93
-Brokerage & Investment Banking,0.95,5.74,65.11
-Building Materials,1.36,9.46,15.95
-Business & Consumer Services,1.00,8.27,14.37
-Cable TV,0.96,6.28,55.82
-Chemical (Basic),1.15,7.63,36.81
-Chemical (Diversified),0.99,6.47,53.08
-Chemical (Specialty),0.92,7.67,21.34
-Coal & Related Energy,1.18,9.23,8.65
-Computer Services,1.23,8.72,20.84
-Computers/Peripherals,1.14,9.29,4.6
-Construction Supplies,1.29,9.14,17.74
-Diversified,1.09,8.61,13.86
-Drugs (Biotechnology),1.25,9.37,14.6
-Drugs (Pharmaceutical),1.07,8.72,14.45
-Education,0.98,8.1,16.28
-Electrical Equipment,1.27,9.4,12.93
-Electronics (Consumer & Office),0.92,8.12,11.75
-Electronics (General),1.06,8.55,12.6
-Engineering/Construction,0.99,8.17,15.2
-Entertainment,1.04,8.28,16.9
-Environmental & Waste Services,0.92,7.88,16.19
-Farming/Agriculture,0.98,7.43,34.78
-Financial Svcs. (Non-bank & Insurance),1.07,5.46,74.14
-Food Processing,0.47,6.02,26.75
-Food Wholesalers,0.72,6.64,30.21
-Furn/Home Furnishings,0.87,7.15,29.54
-Green & Renewable Energy,1.13,6.5,63.79
-Healthcare Products,1.01,8.5,11.34
-Healthcare Support Services,0.94,7.6,24.36
-Heathcare Information and Technology,1.22,9.1,13.94
-Homebuilding,1.43,9.78,14.89
-Hospitals/Healthcare Facilities,0.86,6.57,43.55
-Hotel/Gaming,1.19,8.12,30.17
-Household Products,0.90,7.91,13.21
-Information Services,0.98,7.62,26.13
-Insurance (General),0.76,7.35,14.79
-Insurance (Life),0.73,6.36,38.55
-Insurance (Prop/Cas.),0.61,6.79,13.39
-Investments & Asset Management,0.57,6.2,25.95
-Machinery,1.07,8.54,13.57
-Metals & Mining,1.02,8.4,14.35
-Office Equipment & Services,1.20,8.05,31.74
-Oil/Gas (Integrated),0.48,6.33,12.06
-Oil/Gas (Production and Exploration),0.88,7.52,21.04
-Oil/Gas Distribution,0.75,6.59,34.01
-Oilfield Svcs/Equip.,0.94,7.44,27.81
-Packaging & Container,0.98,7.2,34.6
-Paper/Forest Products,1.07,8.32,18.41
-Power,0.54,5.54,44.55
-Precious Metals,1.23,9.09,15.89
-Publishing & Newspapers,0.64,6.63,22.3
-R.E.I.T.,0.95,6.62,45.5
-Real Estate (Development),1.03,6.58,52.09
-Real Estate (General/Diversified),0.86,6.99,29.55
-Real Estate (Operations & Services),1.08,8.14,22.35
-Recreation,1.33,7.97,39.43
-Reinsurance,0.54,6.08,26.78
-Restaurant/Dining,1.01,8.05,18.79
-Retail (Automotive),1.35,8.39,33.51
-Retail (Building Supply),1.79,11,16.8
-Retail (Distributors),1.12,8.16,23.82
-Retail (General),1.06,8.79,8.03
-Retail (Grocery and Food),0.58,5.96,34.32
-Retail (REITs),0.95,6.96,35.39
-Retail (Special Lines),1.22,8.64,22.44
-Rubber& Tires,0.65,5.33,79.47
-Semiconductor,1.49,10.76,3.75
-Semiconductor Equip,1.48,10.51,7.56
-Shipbuilding & Marine,0.58,6.64,16.05
-Shoe,1.42,10.15,9.29
-Software (Entertainment),1.18,9.58,2.43
-Software (Internet),1.69,11.1,10.35
-Software (System & Application),1.24,9.69,4.67
-Steel,1.06,8.17,20.57
-Telecom (Wireless),0.77,6.92,32.25
-Telecom. Equipment,1.00,8.39,11.35
-Telecom. Services,0.89,6.37,50.04
-Tobacco,0.98,7.95,21.85
-Transportation,1.03,7.72,27.91
-Transportation (Railroads),0.99,7.75,22.11
-Trucking,1.10,8.39,18.64
-Utility (General),0.39,5.2,43.84
-Utility (Water),0.68,6.15,36.96%"""
-
-@st.cache_data
-def load_data():
-    try:
-        df = pd.read_csv(CSV)
-        df = df[["Industry Name", "Beta", "Cost of Capital", "D/(D+E)"]]
-        df.columns = ["Industry", "Beta", "WACC", "Debt"]
-        df["WACC"] = df["WACC"].str.rstrip("%").astype(float)
-        df["Debt"] = df["Debt"].str.rstrip("%").astype(float)
-    except Exception:
-        df = pd.read_csv(StringIO(FALLBACK))
-        df.columns = ["Industry", "Beta", "WACC", "Debt"]
-        df["WACC"] = df["WACC"].astype(str).str.rstrip("%").astype(float)
-        df["Debt"] = df["Debt"].astype(str).str.rstrip("%").astype(float)
-    return df
-
-df_all = load_data()
-
-# ---------- session init ----------
-ss = st.session_state
-for k, v in [
-    ("game_active", False),
-    ("game_submitted", False),
-    ("df", None),
-    ("letters", []),
-    ("industries_opts", []),
-    ("true_map", {}),
-    ("answers", {}),
-    ("results", []),
-    ("score", 0.0),
-]:
-    if k not in ss:
-        ss[k] = v
-
-# ---------- sidebar ----------
-with st.sidebar:
-    if not ss.game_active:
-        st.markdown("### 🎮 Game Setup")
-        n = st.slider("Number of industries", 2, 10, 5)
-        st.markdown(f"*Selected: {n} industries*")
-        
-        if st.button("🚀 Start Game", type="primary", use_container_width=True):
-            sample   = df_all.sample(n).reset_index(drop=True)
-            letters  = list(string.ascii_uppercase[:n])
-
-            # metric strings in TRUE order
-            metrics = []
-            for _, r in sample.iterrows():
-                beta  = float(r["Beta"])
-                wacc  = float(r["WACC"])
-                debt  = float(r["Debt"])
-                if debt <= 1:          # convert 0–1 ratio to 0–100 %
-                    debt *= 100
-                metrics.append(
-                    f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
-                )
-
-            industries = sample["Industry"].tolist()
-            industries_opts = industries.copy()
-            random.shuffle(industries_opts)
-
-            ss.df          = sample
-            ss.letters     = letters
-            ss.industries_opts = industries_opts
-            ss.true_map    = {L: industries[i] for i, L in enumerate(letters)}
-            ss.answers     = {L: "Select..." for L in letters}
-
-            ss.game_active    = True
-            ss.game_submitted = False
-            ss.balloons_shown = False  # Reset balloons flag for new game
-            
-        st.markdown("---")
-        st.markdown("### 📖 How to Play")
-        st.markdown("""
-        1. **Observe** the 3D scatter plot
-        2. **Match** each lettered point to its correct industry
-        3. **Submit** your answers to see results
-        
-        **Scoring**: +1 for correct, -0.5 for incorrect
-        """)
-        
-        if ss.game_submitted:
-            st.markdown("### 🎯 Latest Score")
-            st.metric("Score", f"{ss.score:.1f}/{len(ss.letters)}")
-    else:
-        st.markdown("### 🎮 Game in Progress")
-        completed = sum(1 for v in ss.answers.values() if v != "Select...")
-        st.progress(completed / len(ss.letters))
-        st.markdown(f"**Progress**: {completed}/{len(ss.letters)} completed")
-
-# ---------- main ----------
-st.title("🎯 Industry Matching Game")
+# Custom header with logo/title
+st.title("📊 NPV and IRR Visualizer")
 
 # Add a description
-with st.expander("ℹ️ About this game", expanded=False):
+with st.expander("ℹ️ About this tool", expanded=False):
     st.markdown("""
-    This game consists of matching industries with their correct beta, leverage (D/(D+E)) and WACC.
-
-    The data used in this application are taken from Professor Damodaran's website.
+    This tool helps you visualize the **Net Present Value (NPV)** and **Internal Rate of Return (IRR)** for a series of cash flows.
+    
+    - **NPV (Net Present Value)**: Calculates the present value of future cash flows minus the initial investment
+    - **IRR (Internal Rate of Return)**: The discount rate at which the NPV equals zero
+    
+    Enter your cash flows as comma-separated values, with the initial investment as a negative number.
     """)
 
-if ss.game_active:
-    df      = ss.df
-    letters = ss.letters
+# Initialize session state for template button
+if "use_template" not in st.session_state:
+    st.session_state.use_template = False
 
-    # Add a progress indicator
-    progress_text = f"📊 **Round in Progress** | Industries: {len(letters)} | Match the financial metrics to their industries!"
-    st.markdown(f"<div style='text-align: center; padding: 10px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin-bottom: 20px;'>{progress_text}</div>", unsafe_allow_html=True)
+def set_template():
+    st.session_state.use_template = True
 
-    col_left, col_right = st.columns(2, gap="medium")
+# Create two columns: left for controls; right for diagram
+col_left, col_right = st.columns([1, 2])
 
-    # graph (left)
-    with col_left:
-        # Create color scheme based on WACC values
-        colors = ['#FF6B6B' if wacc > 9 else '#4ECDC4' if wacc < 7 else '#45B7D1' 
-                  for wacc in df["WACC"]]
+with col_left:
+    # Card for input controls
+    st.markdown("### 💰 Cash Flow Inputs")
+    
+    # Default value logic
+    default_cash_flows = "-1000, 300, 400, 500, 600" if st.session_state.use_template else ""
+    
+    # Let students enter cash flows as comma-separated values
+    cash_flow_input = st.text_area(
+        "Enter cash flows for each period (comma separated):",
+        default_cash_flows,
+        help="Enter the initial investment as a negative number, followed by the cash inflows"
+    )
+    
+    # Reset the template flag after use
+    if st.session_state.use_template:
+        st.session_state.use_template = False
+    
+    # Convert the cash flow input into a list of floats
+    try:
+        cash_flows = [float(x.strip()) for x in cash_flow_input.split(",")]
+        valid_input = True
+    except Exception:
+        st.error("⚠️ Invalid input. Please enter valid numbers separated by commas.")
+        valid_input = False
+    
+    # Option to add a template - using the callback function
+    if st.button("📋 Use Example Template", type="secondary", use_container_width=True, on_click=set_template):
+        pass  # The callback function will handle setting the template flag
+    
+    if valid_input:
+        # Cash flow summary
+        st.markdown("### 📋 Cash Flow Summary")
         
-        fig = go.Figure(go.Scatter3d(
-            x=df["Beta"], y=df["Debt"], z=df["WACC"],
-            text=letters, mode="markers+text", textposition="top center",
-            marker=dict(
-                size=12,
-                color=colors,
-                opacity=0.8,
-                line=dict(width=2, color='white')
-            ),
-            textfont=dict(size=14, color='white', family="Arial Black")
+        # Create a table showing periods and cash flows
+        periods = list(range(len(cash_flows)))
+        
+        # Display cash flow table
+        for i, cf in zip(periods, cash_flows):
+            color = "🔴" if cf < 0 else "🟢" if cf > 0 else "⚪"
+            st.write(f"{color} **Period {i}**: €{cf:,.2f}")
+        
+        # Calculate and display initial investment and total cash inflows
+        init_investment = cash_flows[0] if cash_flows[0] < 0 else 0
+        total_inflows = sum(cf for cf in cash_flows if cf > 0)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Initial Investment", f"€{init_investment:,.2f}")
+        with col2:
+            st.metric("Total Cash Inflows", f"€{total_inflows:,.2f}")
+    
+    # Discount rate controls
+    st.markdown("### ⚙️ Discount Rate Settings")
+    
+    # Slider to select a discount rate range (in percentages)
+    discount_rate_range = st.slider(
+        "Discount Rate Range (%):",
+        min_value=0,
+        max_value=50,
+        value=(5, 30),
+        help="Select the range of discount rates to analyze"
+    )
+    min_rate, max_rate = discount_rate_range
+    min_rate_dec = min_rate / 100.0
+    max_rate_dec = max_rate / 100.0
+    
+    # Simplified resolution control - using High as default
+    resolution = st.radio(
+        "Chart Detail Level:",
+        options=["Standard", "High"],
+        index=1,  # Default to High
+        horizontal=True,
+        help="High detail provides a smoother curve and better exports"
+    )
+    
+    # Set number of points based on resolution choice
+    num_points = 500 if resolution == "High" else 100
+    
+    # Information box
+    st.markdown("---")
+    st.markdown("### 📖 Formula Reference")
+    st.markdown("""
+    **NPV Calculation:**
+    
+    NPV = CF₀ + CF₁/(1+r)¹ + CF₂/(1+r)² + ... + CFₙ/(1+r)ⁿ
+    
+    Where:
+    - CF = Cash flow in period t
+    - r = Discount rate
+    - n = Number of periods
+    
+    **IRR**: The discount rate where NPV = 0
+    """)
+
+# Define a function to compute NPV
+def compute_npv(cash_flows, r):
+    return sum(cf / ((1 + r) ** t) for t, cf in enumerate(cash_flows))
+
+# Function to find multiple IRRs
+def find_multiple_irrs(cash_flows, rate_min=0.0001, rate_max=0.9999, precision=0.0001):
+    """Find multiple IRRs if they exist by identifying zero-crossings in the NPV function."""
+    # Generate a dense set of rates for precise zero detection
+    dense_rates = np.linspace(rate_min, rate_max, 10000)
+    dense_npvs = [compute_npv(cash_flows, r) for r in dense_rates]
+    
+    # Find where the NPV changes sign (zero crossings)
+    zero_crossings = []
+    for i in range(1, len(dense_npvs)):
+        if dense_npvs[i-1] * dense_npvs[i] <= 0:  # Sign change detected
+            # Binary search to find more precise IRR
+            low, high = dense_rates[i-1], dense_rates[i]
+            while high - low > precision:
+                mid = (low + high) / 2
+                npv_mid = compute_npv(cash_flows, mid)
+                if npv_mid * compute_npv(cash_flows, low) <= 0:
+                    high = mid
+                else:
+                    low = mid
+            zero_crossings.append((low + high) / 2)
+    
+    # Count sign changes in cash flows to check if multiple IRRs are theoretically possible
+    sign_changes = sum(1 for i in range(1, len(cash_flows)) if cash_flows[i-1] * cash_flows[i] < 0)
+    
+    # Filter out very close values (could be duplicates due to numerical precision)
+    if len(zero_crossings) > 1:
+        filtered = [zero_crossings[0]]
+        for irr in zero_crossings[1:]:
+            if min(abs(irr - existing) for existing in filtered) > 0.01:  # 1% difference threshold
+                filtered.append(irr)
+        zero_crossings = filtered
+    
+    return zero_crossings, sign_changes
+
+if valid_input:
+    # Generate a set of discount rates to evaluate
+    rates = np.linspace(min_rate_dec, max_rate_dec, num_points)
+    npv_values = [compute_npv(cash_flows, r) for r in rates]
+    
+    # Find multiple IRRs if they exist
+    irrs, sign_changes = find_multiple_irrs(cash_flows)
+    
+    # Check if we found any valid IRRs
+    irr_valid = len(irrs) > 0
+    multiple_irrs = len(irrs) > 1
+    
+    # Also try numpy_financial's IRR method as a backup
+    try:
+        npf_irr = npf.irr(cash_flows)
+        # Add this IRR if it's not already in our list (within a tolerance)
+        if irr_valid and all(abs(npf_irr - irr) > 0.01 for irr in irrs):
+            irrs.append(npf_irr)
+        elif not irr_valid:
+            irrs = [npf_irr]
+            irr_valid = True
+    except Exception:
+        # Our custom algorithm may have found IRRs even if numpy_financial didn't
+        pass
+    
+    # Sort IRRs for display purposes
+    if irr_valid:
+        irrs.sort()
+        # Convert to percentages
+        irrs_percent = [irr * 100 for irr in irrs]
+    
+    with col_right:
+        st.markdown("### 📈 NPV vs. Discount Rate")
+        
+        # Create the plotly figure
+        fig = go.Figure()
+        
+        # Add the NPV curve
+        fig.add_trace(go.Scatter(
+            x=rates * 100,
+            y=npv_values,
+            mode='lines',
+            name='NPV Curve',
+            line=dict(color='#3b82f6', width=3),
+            hovertemplate='Rate: %{x:.2f}%<br>NPV: €%{y:.2f}<extra></extra>'
         ))
         
-        fig.update_layout(
-            scene=dict(
-                xaxis_title="Beta", 
-                yaxis_title="Debt %", 
-                zaxis_title="WACC %",
-                xaxis=dict(
-                    gridcolor='#999999',
-                    gridwidth=2,
-                    showgrid=True,
-                    zeroline=True,
-                    zerolinecolor='#333333',
-                    zerolinewidth=3,
-                    showbackground=True,
-                    backgroundcolor='rgba(250,250,250,0.8)'
-                ),
-                yaxis=dict(
-                    gridcolor='#999999',
-                    gridwidth=2,
-                    showgrid=True,
-                    zeroline=True,
-                    zerolinecolor='#333333',
-                    zerolinewidth=3,
-                    showbackground=True,
-                    backgroundcolor='rgba(250,250,250,0.8)'
-                ),
-                zaxis=dict(
-                    gridcolor='#999999',
-                    gridwidth=2,
-                    showgrid=True,
-                    zeroline=True,
-                    zerolinecolor='#333333',
-                    zerolinewidth=3,
-                    showbackground=True,
-                    backgroundcolor='rgba(250,250,250,0.8)'
-                )
-            ),
-            height=600, 
-            margin=dict(l=0, r=0, t=20, b=0)
+        # Add zero line
+        fig.add_shape(
+            type="line",
+            x0=min_rate,
+            y0=0,
+            x1=max_rate,
+            y1=0,
+            line=dict(
+                color="black",
+                width=1,
+                dash="dash",
+            )
         )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # dropdowns (right)
-    with col_right:
-        if not ss.game_submitted:
-            st.markdown("### 🎲 Match each metric to its industry")
-            st.markdown("*Select the correct industry for each lettered point's Beta, Debt%, and WACC combination.*")
-            
-            for i, L in enumerate(letters):
-                beta  = float(df.at[i, "Beta"])
-                wacc  = float(df.at[i, "WACC"])
-                debt  = float(df.at[i, "Debt"])
-                if debt <= 1:
-                    debt *= 100
-                metric_display = f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
-                
-                current  = ss.answers[L]
-                used     = {v for k, v in ss.answers.items() if k != L}
-                opts     = ["Select..."] + [
-                    ind for ind in ss.industries_opts if ind not in used or ind == current
-                ]
-                
-                # Add emoji indicators based on selection status only
-                status_emoji = "🔵" if current != "Select..." else "⚪"
-                
-                sel = st.selectbox(
-                    f"{status_emoji} **Point {L}**: {metric_display}",
-                    opts,
-                    index=opts.index(current) if current in opts else 0,
-                    key=f"sel_{L}"
-                )
-                ss.answers[L] = sel
-
-            # submit with improved styling
-            st.markdown("---")
-            col1, col2, col3 = st.columns([1,2,1])
-            with col2:
-                if st.button("🚀 Submit Answers", type="primary", use_container_width=True):
-                    if "Select..." in ss.answers.values():
-                        st.error("⚠️ Complete all selections first.")
-                    elif len(set(ss.answers.values())) < len(letters):
-                        st.error("⚠️ Each metric combo can be chosen only once.")
-                    else:
-                        correct = 0
-                        results = []
-                        for i, L in enumerate(letters):
-                            g = ss.answers[L]
-                            a = ss.true_map[L]
-                            mark = "✅" if g == a else "❌"
-                            if mark == "✅":
-                                correct += 1
-                            results.append((L, df.at[i, "Industry"], a, mark))
-                        ss.score   = correct - 0.5 * (len(letters) - correct)
-                        ss.results = results
-                        ss.game_submitted = True
-                        ss.game_active = False  # unlock sidebar immediately
-                        st.rerun()
-
-# ---------- results (centered) ----------
-if ss.game_submitted:
-    lft, ctr, rgt = st.columns([1, 2, 1])
-    with ctr:
-        # Score display with visual styling
-        score_color = "#28a745" if ss.score >= len(ss.letters) * 0.8 else "#ffc107" if ss.score >= 0 else "#dc3545"
-        st.markdown(f"<div style='text-align: center; padding: 20px; background-color: {score_color}; color: white; border-radius: 15px; margin-bottom: 20px;'><h2>🎯 Final Score: {ss.score:.1f}/{len(ss.letters)}</h2></div>", unsafe_allow_html=True)
         
-        if ss.results and len(ss.results) == len(ss.letters) \
-           and all(r[3] == "✅" for r in ss.results):
-            if not hasattr(ss, 'balloons_shown') or not ss.balloons_shown:
-                st.balloons()
-                ss.balloons_shown = True
-            st.markdown("### 🎉 Perfect Round! Outstanding!")
-
-        st.markdown("### 📋 Detailed Results")
-        for L, industry, correct_industry, mark in ss.results:
-            color = "#d4edda" if mark == "✅" else "#f8d7da"
-            border_color = "#28a745" if mark == "✅" else "#dc3545"
+        # If IRRs are computed and lie within the selected discount rate range, mark them
+        if irr_valid:
+            # Colors for multiple IRRs if needed
+            irr_colors = ['red', 'purple', 'orange', 'green']
             
-            # Get the metrics for this point
-            beta  = float(ss.df.at[ss.letters.index(L), "Beta"])
-            wacc  = float(ss.df.at[ss.letters.index(L), "WACC"])
-            debt  = float(ss.df.at[ss.letters.index(L), "Debt"])
-            if debt <= 1:
-                debt *= 100
-            metric_display = f"Beta: {beta:.2f}, Debt%: {debt:.2f}%, WACC: {wacc:.2f}%"
+            for idx, (irr, irr_percent) in enumerate(zip(irrs, irrs_percent)):
+                if min_rate <= irr_percent <= max_rate:
+                    color = irr_colors[idx % len(irr_colors)]
+                    npv_at_irr = compute_npv(cash_flows, irr)
+                    
+                    # Add IRR point
+                    fig.add_trace(go.Scatter(
+                        x=[irr_percent],
+                        y=[npv_at_irr],
+                        mode='markers',
+                        marker=dict(size=12, color=color, symbol='circle'),
+                        name=f'IRR {idx+1} = {irr_percent:.2f}%',
+                        hovertemplate='IRR {}: %{{x:.2f}}%<br>NPV: €%{{y:.2f}}<extra></extra>'.format(idx+1)
+                    ))
+                    
+                    # Add IRR vertical line
+                    fig.add_shape(
+                        type="line",
+                        x0=irr_percent,
+                        y0=min(npv_values) if min(npv_values) < 0 else 0,
+                        x1=irr_percent,
+                        y1=0,
+                        line=dict(
+                            color=color,
+                            width=1,
+                            dash="dash",
+                        )
+                    )
+                    
+                    # Add IRR annotation
+                    fig.add_annotation(
+                        x=irr_percent,
+                        y=0,
+                        text=f"IRR {idx+1}: {irr_percent:.2f}%",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1,
+                        arrowwidth=2,
+                        arrowcolor=color,
+                        ax=0,
+                        ay=-40 - (idx * 30),  # Stagger annotations
+                        bordercolor=color,
+                        borderwidth=2,
+                        borderpad=8,
+                        bgcolor="white",
+                        opacity=0.8,
+                        font=dict(color=color, size=16)  # Increased font size
+                    )
+        
+        # Customize the layout
+        fig.update_layout(
+            xaxis=dict(
+                title=dict(text="Discount Rate (%)", font=dict(size=18)),
+                tickfont=dict(size=14),
+                tickformat='.1f'
+            ),
+            yaxis=dict(
+                title=dict(text="Net Present Value (€)", font=dict(size=18)),
+                tickfont=dict(size=14),
+                tickformat=',.2f'
+            ),
+            legend=dict(
+                orientation="h", 
+                y=-0.2, 
+                x=0.5,
+                font=dict(size=16)
+            ),
+            height=600,
+            margin=dict(l=80, r=80, t=80, b=120)
+        )
+        
+        # Note about SVG export
+        st.info("💡 For high-quality exports, use the camera icon in the plot toolbar and select SVG format.")
+        
+        # Display the chart with improved SVG export options
+        st.plotly_chart(fig, use_container_width=True, config={
+            'toImageButtonOptions': {
+                'format': 'svg', 
+                'filename': 'npv_irr_chart',
+                'width': 1000,   # Adjusted for better proportion
+                'height': 600,   # Match the displayed chart height
+                'scale': 2       # Maintain quality without scaling issues
+            }
+        })
+        
+        # Results section
+        st.markdown("---")
+        if irr_valid:
+            # Calculate NPV at a common discount rate (10%)
+            standard_rate = 0.10  # 10%
+            npv_at_standard = compute_npv(cash_flows, standard_rate)
             
-            st.markdown(f"""
-            <div style='padding: 10px; margin: 5px 0; background-color: {color}; 
-                        border-left: 4px solid {border_color}; border-radius: 5px;'>
-                <strong>{mark} Point {L}</strong> ({metric_display})<br>
-                <small>Correct Industry: {correct_industry}</small>
-            </div>
-            """, unsafe_allow_html=True)
+            if multiple_irrs:
+                st.success(f"**🎯 Multiple Internal Rates of Return (IRRs) Found:**")
+                irr_list = ", ".join([f"{irr:.2f}%" for irr in irrs_percent])
+                st.write(f"**IRR values:** {irr_list}")
+                st.write(f"*This project has {len(irrs)} discount rates at which NPV equals zero.*")
+                
+                # Add info about multiple IRRs
+                st.warning("""
+                **Note:** Multiple IRRs indicate a complex investment pattern. When multiple IRRs exist, 
+                the decision to accept or reject the project should consider additional factors beyond just IRR.
+                """)
+            else:
+                st.success(f"**🎯 Internal Rate of Return (IRR):** {irrs_percent[0]:.2f}%")
+                st.write("*The discount rate at which NPV equals zero*")
+            
+            st.metric("NPV at 10% discount rate", f"€{npv_at_standard:,.2f}")
+            
+            # Add sign changes information
+            if sign_changes > 1:
+                st.write(f"**Cash flow sign changes:** {sign_changes}")
+                st.write("*Multiple sign changes can lead to multiple IRRs*")
+                
+        else:
+            st.error("**❌ No valid IRR found within the given range.**")
+            st.write("This usually happens when the cash flows don't change sign (from negative to positive or vice versa) or when all IRRs fall outside the selected discount rate range.")
+        
+        # Add additional information about the results
+        with st.expander("📈 NPV Interpretation", expanded=False):
+            st.markdown("""
+            ### Interpreting NPV Results
+            
+            - **Positive NPV**: The investment adds value, and should be accepted
+            - **Negative NPV**: The investment subtracts value, and should be rejected
+            - **Zero NPV**: The investment breaks even
+            
+            ### Decision Rule
+            
+            Accept investment opportunities with positive NPVs at your required rate of return.
+            When comparing mutually exclusive projects, choose the one with the highest NPV.
+            """)
+        
+        with st.expander("💰 IRR Interpretation", expanded=False):
+            st.markdown("""
+            ### Interpreting IRR Results
+            
+            The IRR is the discount rate that makes the NPV equal to zero. It represents the annualized effective return rate:
+            
+            - If IRR > Required Rate of Return: Accept the project
+            - If IRR < Required Rate of Return: Reject the project
+            
+            ### Multiple IRRs
+            
+            When cash flows change sign more than once (e.g., negative, then positive, then negative again), 
+            multiple IRRs can exist. This happens in projects with:
+            
+            - Large maintenance costs or decommissioning expenses later in the project
+            - Projects with multiple phases of investment and returns
+            - Unconventional cash flow patterns
+            
+            In such cases, the IRR decision rule becomes ambiguous, and it's better to rely on the NPV method.
+            
+            ### Limitations
+            
+            - Multiple IRRs can exist if cash flows change sign more than once
+            - IRR may give misleading results when comparing mutually exclusive projects
+            - The simple IRR won't work, if the discount rate changes over time
+            """)
 
-# ---------- footer ----------
+# Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; font-size: 14px; padding: 20px;'>"
-    "Industry Matching Game | Developed by Prof. Marc Goergen with the help of ChatGPT and Claude"
+    "NPV and IRR Visualizer | Developed by Prof. Marc Goergen with the help of ChatGPT, Perplexity and Claude"
     "</div>", 
     unsafe_allow_html=True
 )
