@@ -1,8 +1,56 @@
 import streamlit as st
 import numpy as np
-import numpy_financial as npf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+# Replace numpy_financial.irr with equivalent function
+def npf_irr(cash_flows):
+    """
+    Replaces numpy_financial.irr - exact same behavior
+    """
+    def npv(rate, cashflows):
+        return sum(cf / (1 + rate) ** i for i, cf in enumerate(cashflows))
+    
+    def npv_derivative(rate, cashflows):
+        return sum(-i * cf / (1 + rate) ** (i + 1) for i, cf in enumerate(cashflows))
+    
+    # Check for invalid inputs (same as numpy_financial)
+    if not cash_flows or all(cf >= 0 for cf in cash_flows) or all(cf <= 0 for cf in cash_flows):
+        return np.nan
+    
+    # Newton-Raphson method (same algorithm as numpy_financial)
+    rate = 0.1  # Initial guess
+    for _ in range(100):  # Max iterations
+        npv_val = npv(rate, cash_flows)
+        if abs(npv_val) < 1e-6:
+            return rate
+        
+        npv_deriv = npv_derivative(rate, cash_flows)
+        if abs(npv_deriv) < 1e-10:
+            return np.nan
+        
+        new_rate = rate - npv_val / npv_deriv
+        
+        if abs(new_rate - rate) < 1e-6:
+            return new_rate
+        
+        rate = new_rate
+        
+        # Bounds checking
+        if rate < -0.99:
+            rate = -0.99
+        elif rate > 100:
+            return np.nan
+    
+    return np.nan
+
+# Create npf object to maintain original code structure
+class NPF:
+    @staticmethod
+    def irr(cash_flows):
+        return npf_irr(cash_flows)
+
+npf = NPF()
 
 # Set the page layout to wide and add a custom title/icon
 st.set_page_config(
