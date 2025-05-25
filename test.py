@@ -1,6 +1,5 @@
 import streamlit as st
 import numpy as np
-import numpy_financial as npf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -135,6 +134,39 @@ with col_left:
 def compute_npv(cash_flows, r):
     return sum(cf / ((1 + r) ** t) for t, cf in enumerate(cash_flows))
 
+# Manual IRR calculation using Newton-Raphson method
+def compute_irr_manual(cash_flows, guess=0.1, precision=1e-6, max_iterations=100):
+    """
+    Calculate IRR using Newton-Raphson method
+    """
+    def npv_derivative(cash_flows, r):
+        return sum(-t * cf / ((1 + r) ** (t + 1)) for t, cf in enumerate(cash_flows))
+    
+    r = guess
+    for i in range(max_iterations):
+        npv = compute_npv(cash_flows, r)
+        if abs(npv) < precision:
+            return r
+        
+        npv_prime = npv_derivative(cash_flows, r)
+        if abs(npv_prime) < precision:
+            break
+        
+        r_new = r - npv / npv_prime
+        
+        # Keep r within reasonable bounds
+        if r_new < -0.99:
+            r_new = -0.99
+        elif r_new > 10:
+            r_new = 10
+            
+        if abs(r_new - r) < precision:
+            return r_new
+            
+        r = r_new
+    
+    return None  # No convergence
+
 # Function to find multiple IRRs
 def find_multiple_irrs(cash_flows, rate_min=0.0001, rate_max=0.9999, precision=0.0001):
     """Find multiple IRRs if they exist by identifying zero-crossings in the NPV function."""
@@ -182,17 +214,18 @@ if valid_input:
     irr_valid = len(irrs) > 0
     multiple_irrs = len(irrs) > 1
     
-    # Also try numpy_financial's IRR method as a backup
+    # Also try manual IRR calculation as a backup
     try:
-        npf_irr = npf.irr(cash_flows)
-        # Add this IRR if it's not already in our list (within a tolerance)
-        if irr_valid and all(abs(npf_irr - irr) > 0.01 for irr in irrs):
-            irrs.append(npf_irr)
-        elif not irr_valid:
-            irrs = [npf_irr]
-            irr_valid = True
+        manual_irr = compute_irr_manual(cash_flows)
+        if manual_irr is not None:
+            # Add this IRR if it's not already in our list (within a tolerance)
+            if irr_valid and all(abs(manual_irr - irr) > 0.01 for irr in irrs):
+                irrs.append(manual_irr)
+            elif not irr_valid:
+                irrs = [manual_irr]
+                irr_valid = True
     except Exception:
-        # Our custom algorithm may have found IRRs even if numpy_financial didn't
+        # Our custom algorithm may have found IRRs even if manual calculation didn't
         pass
     
     # Sort IRRs for display purposes
