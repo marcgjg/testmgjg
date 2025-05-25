@@ -1,5 +1,5 @@
 streamlit
 pandas
-numpy_financial
+numpy-financial
 plotly
 openpyxl
