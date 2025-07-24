@@ -2,9 +2,10 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
 import importlib.util
 
-# ─────────── PAGE CONFIG ─────────── #
+# ───────────────────── PAGE CONFIG ───────────────────── #
 st.set_page_config(page_title="Optimal Capital Structure",
                    page_icon="📐", layout="wide")
 st.markdown(
@@ -12,7 +13,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─────────── ABOUT ─────────── #
+# ───────────────────── ABOUT PANEL ───────────────────── #
 with st.expander("ℹ️ About this tool", expanded=False):
     st.markdown(
         """
@@ -28,7 +29,7 @@ with st.expander("ℹ️ About this tool", expanded=False):
         unsafe_allow_html=True,
     )
 
-# ─────────── SIDEBAR INPUTS ─────────── #
+# ───────────────────── SIDEBAR ───────────────────── #
 sb = st.sidebar
 sb.header("Core inputs")
 
@@ -41,42 +42,42 @@ sb.markdown("---")
 FD_total = sb.slider("PV of distress costs at 100 % debt  (€ million)",
                      0.0, 150.0, 40.0, 1.0)
 
-# ─────────── MODEL CONSTANTS ─────────── #
-BETA_DECAY  = 2.0   # peak of red curve ≈ 1/β = 50 %
-FD_EXPONENT = 2.0   # convexity of distress costs
-OFFSET      = 7     # spacing (ppt) for the two arrows
-DIST_GAP    = 3     # additional gap for PV(distress) marker
+# ───────────────────── MODEL CONSTANTS ───────────────────── #
+BETA_DECAY  = 2.0   # red‑curve peak ≈ 1/β = 50 %
+FD_EXPONENT = 2.0
+OFFSET      = 7     # ±ppt offsets for arrows
+DIST_GAP    = 3     # extra gap for PV(distress) marker
 INDIGO      = "#6366F1"
 
-# ─────────── COMPUTE CURVES ─────────── #
+# ───────────────────── CALCULATIONS ───────────────────── #
 d_pct  = np.arange(0, 101)
 d_frac = d_pct / 100
 
 pv_tax = (T_c/100) * V_U * d_frac * np.exp(-BETA_DECAY * d_frac)
 V_tax  = V_U + pv_tax
 
-pv_fd  = FD_total * d_frac**FD_EXPONENT
+pv_fd  = FD_total * d_frac ** FD_EXPONENT
 V_L    = V_tax - pv_fd
 
 opt_idx   = int(np.argmax(V_L))
 opt_d_pct = int(d_pct[opt_idx])
 
-x_left   = max(0,  opt_d_pct - OFFSET)          # PV (tax shield)
-x_right  = min(100, opt_d_pct + OFFSET)         # V_L arrow
-x_dist   = min(100, x_right + DIST_GAP)         # PV(distress)
+x_left   = max(0,  opt_d_pct - OFFSET)         # PV (tax shield)
+x_right  = min(100, opt_d_pct + OFFSET)        # V_L arrow
+x_dist   = min(100, x_right + DIST_GAP)        # PV(distress)
 
 PVTS_top = V_tax[x_left]
 VL_top   = V_L[x_right]
 VDist_bot, VDist_top = V_L[x_dist], V_tax[x_dist]
 
-# ─────────── BUILD FIGURE ─────────── #
+# ───────────────────── BUILD FIG ───────────────────── #
 fig = go.Figure()
 
-fig.add_trace(go.Scatter(x=d_pct, y=V_L, mode="lines",
-                         name="V<sub>L</sub> (levered)",
+fig.add_trace(go.Scatter(x=d_pct, y=V_L,
+                         mode="lines", name="V<sub>L</sub> (levered)",
                          line=dict(color="black", width=3)))
-fig.add_trace(go.Scatter(x=d_pct, y=V_tax, mode="lines",
-                         name="V (tax benefit only)",
+fig.add_trace(go.Scatter(x=d_pct, y=V_tax,
+                         mode="lines", name="V (tax benefit only)",
                          line=dict(color="#d62728", width=2)))
 
 fig.add_hline(y=V_U, line=dict(color=INDIGO, dash="dash"),
@@ -97,7 +98,7 @@ fig.add_annotation(x=x_left - 1.5, y=(V_U + PVTS_top)/2,
                    showarrow=False, font=dict(size=12, color="#d62728"),
                    align="right")
 
-# Value of levered firm arrow
+# V_L arrow
 fig.add_shape(type="line", x0=x_right, x1=x_right,
               y0=V_U, y1=VL_top,
               line=dict(color="black", dash="dot"))
@@ -126,28 +127,34 @@ fig.update_layout(xaxis_title="Debt as % of Assets",
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ─────────── SVG DOWNLOAD (graceful) ─────────── #
-if importlib.util.find_spec("kaleido"):
-    svg_bytes = fig.to_image(format="svg")  # kaleido is present
-    st.download_button("⬇️ Download diagram (SVG)",
-                       data=svg_bytes,
-                       file_name="capital_structure.svg",
-                       mime="image/svg+xml")
-else:
-    st.info(
-        "SVG export requires the **kaleido** package. "
-        "Add `kaleido>=0.2.1` to your *requirements.txt* "
-        "and redeploy to enable the download button.",
-        icon="⚠️",
-    )
+# ───────────────────── SVG DOWNLOAD ───────────────────── #
+def show_svg_button_or_warning():
+    if not importlib.util.find_spec("kaleido"):
+        st.info("SVG export disabled: **kaleido** is not installed "
+                "(add `kaleido>=0.2.1` to requirements.txt).", icon="⚠️")
+        return
+    try:
+        svg_bytes = fig.to_image(format="svg")   # kaleido call
+        st.download_button("⬇️ Download diagram (SVG)",
+                           data=svg_bytes,
+                           file_name="capital_structure.svg",
+                           mime="image/svg+xml")
+    except RuntimeError:
+        st.info(
+            "SVG export requires Kaleido’s head‑less Chrome. "
+            "On Debian/Ubuntu hosts install it with:\n\n"
+            "`sudo apt‑get install -y libcairo2`",
+            icon="⚠️",
+        )
 
-# ─────────── SUMMARY ─────────── #
+show_svg_button_or_warning()
+
+# ───────────────────── SUMMARY & DATA ───────────────────── #
 st.markdown(
     f"**Optimal capital structure:** **{opt_d_pct}% debt**, "
     f"levered firm value **€{VL_top:,.1f} million**"
 )
 
-# ─────────── DATA TABLE ─────────── #
 with st.expander("Data table"):
     df = pd.DataFrame({
         "Debt %": d_pct,
@@ -159,7 +166,7 @@ with st.expander("Data table"):
     st.dataframe(df.style.format("{:.2f}"),
                  use_container_width=True, height=280)
 
-# ─────────── FOOTER ─────────── #
+# ───────────────────── FOOTER ───────────────────── #
 st.markdown(
     '<div style="text-align:center; padding-top:1rem; color:#6B7280;">'
     'Optimal Capital Structure Visualiser&nbsp;|&nbsp;Developed by Prof.&nbsp;Marc&nbsp;Goergen&nbsp;with the help of&nbsp;ChatGPT'
