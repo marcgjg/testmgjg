@@ -1,5 +1,5 @@
 streamlit>=1.34
-plotly>=5.20          # 5.0+ understands the new kaleido engine
-kaleido>=0.2.1        # provides the head‑less browser for SVG/PNG export
+plotly>=5.20
+kaleido>=0.2.1        # adds head‑less Chrome for SVG/PNG export
 pandas>=2.2
 numpy>=1.24
