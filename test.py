@@ -226,7 +226,7 @@ submit_tab, leaderboard_tab, admin_tab = st.tabs(["Submit", "Leaderboard", "Admi
 with submit_tab:
     st.subheader("Submit your picks")
     with st.form("submission_form", clear_on_submit=False):
-        student_name = st.text_input("Your name (optional)")
+        student_name = st.text_input("Your name *")
         email = st.text_input("Email *")
 
         st.markdown("---")
@@ -237,7 +237,7 @@ with submit_tab:
         with c2:
             beta0 = st.text_input("Beta", key="beta0")
         with c3:
-            shot0 = st.file_uploader("Screenshot (PNG/JPG/PDF)", type=["png","jpg","jpeg","pdf"], key="shot0")
+            shot0 = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shot0")
 
         st.markdown("**2) Near 1 beta**")
         c1, c2, c3 = st.columns([2,1,2])
@@ -246,7 +246,7 @@ with submit_tab:
         with c2:
             beta1 = st.text_input("Beta", key="beta1")
         with c3:
-            shot1 = st.file_uploader("Screenshot (PNG/JPG/PDF)", type=["png","jpg","jpeg","pdf"], key="shot1")
+            shot1 = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shot1")
 
         st.markdown("**3) Highest beta**")
         c1, c2, c3 = st.columns([2,1,2])
@@ -255,7 +255,7 @@ with submit_tab:
         with c2:
             beta_hi = st.text_input("Beta", key="beta_hi")
         with c3:
-            shothi = st.file_uploader("Screenshot (PNG/JPG/PDF)", type=["png","jpg","jpeg","pdf"], key="shothi")
+            shothi = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shothi")
 
         notes = st.text_area("Notes (optional)")
         agree = st.checkbox("I confirm these values are taken from a reliable source and the screenshots are unedited.")
@@ -269,6 +269,18 @@ with submit_tab:
         if not email or not email.strip():
             st.error("Please enter your email.")
             st.stop()
+        
+        # Check screenshots are uploaded
+        if not shot0:
+            st.error("Please upload a screenshot for the near 0 beta stock.")
+            st.stop()
+        if not shot1:
+            st.error("Please upload a screenshot for the near 1 beta stock.")
+            st.stop()
+        if not shothi:
+            st.error("Please upload a screenshot for the highest beta stock.")
+            st.stop()
+        
         b0 = _safe_float(beta0)
         b1 = _safe_float(beta1)
         bhi = _safe_float(beta_hi)
