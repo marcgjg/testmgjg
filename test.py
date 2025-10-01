@@ -210,7 +210,7 @@ hr { border: none; height: 2px; background: linear-gradient(90deg, var(--brand),
 </style>
 """, unsafe_allow_html=True)
 
-submit_tab, leaderboard_tab, admin_tab = st.tabs(["Submit", "Leaderboard", "Admin 🔐"])
+submit_tab, leaderboard_tab, admin_tab = st.tabs(["Submit", "Leaderboard", "Admin 🔒"])
 
 with submit_tab:
     st.subheader("Submit your picks")
@@ -293,8 +293,9 @@ with submit_tab:
         have_any = any(u for _, u in urls)
         if have_any:
             st.toast("Uploads saved", icon="✅")
-            st.markdown("**Evidence uploaded:**\\n" + "\\n".join([f"- {label}: [{url}]({url})" for label, url in urls if url]))" for label, url in urls if url]))
-        st.success("Submitted ✔")
+            upload_text = "**Evidence uploaded:**\n" + "\n".join([f"- {label}: [{url}]({url})" for label, url in urls if url])
+            st.markdown(upload_text)
+        st.success("Submitted ✓")
         try:
             st.rerun()                 # Streamlit ≥ 1.32
         except Exception:
@@ -365,7 +366,11 @@ with admin_tab:
     st.subheader("Admin tools")
     _, table_name, admin_pw = get_storage_cfg()
     entered = st.text_input("Admin passphrase", type="password")
-        team_to_delete = st.text_input("Email to delete (matches the 'team' column)" )
+    
+    if entered and entered == admin_pw:
+        st.success("Access granted")
+        sb = get_client()
+        team_to_delete = st.text_input("Email to delete (matches the 'team' column)")
         if st.button("Delete team submissions") and team_to_delete.strip():
             sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
             st.success(f"Deleted submissions for '{team_to_delete}'.")
