@@ -35,6 +35,7 @@
 from __future__ import annotations
 import time
 import uuid
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 
@@ -75,6 +76,356 @@ def _safe_float(x):
         return float(x)
     except Exception:
         return None
+
+
+def validate_email(email: str) -> bool:
+    """Check if email has valid format."""
+    if not email or not email.strip():
+        return False
+    # Basic email regex: requires @ symbol, characters before and after, and a domain with dot
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+    errs = []
+    for label, val in [("beta near 0", beta0), ("beta near 1", beta1), ("highest beta", betahi)]:
+        if val is None:
+            errs.append(f"Please enter a numeric value for {label}.")
+        elif val < BETA_MIN or val > BETA_MAX:
+            errs.append(f"{label} looks out of range (must be between {BETA_MIN:g} and {BETA_MAX:g}).")
+    return errs
+
+
+def upload_to_storage(sb: Client, file, path: str, bucket: str) -> str:
+    """Upload the file-like to Supabase Storage and return a public URL.
+    Keeps the correct extension for PNG/JPG/PDF and uses upsert for resubmits.
+    """
+    if not file or getattr(file, "size", 0) == 0:
+        return ""
+
+    # Infer extension from MIME
+    mime = (getattr(file, "type", None) or "").lower()
+    ext = ".bin"
+    if "png" in mime:
+        ext = ".png"
+    elif "jpeg" in mime or mime.endswith("/jpg"):
+        ext = ".jpg"
+    elif "pdf" in mime:
+        ext = ".pdf"
+    if not path.endswith(ext):
+        path = path + ext
+
+    data = file.read()
+    if hasattr(file, "seek"):
+        file.seek(0)
+
+    try:
+        # supabase-py v2 signature supports bytes and file_options
+        sb.storage.from_(bucket).upload(
+            path=path,
+            file=data,
+            file_options={"content-type": mime or "application/octet-stream", "x-upsert": "true"},
+        )
+        return sb.storage.from_(bucket).get_public_url(path)
+    except Exception as e:
+        # Provide helpful error message
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            st.error(f"❌ Storage bucket '{bucket}' doesn't exist. Please create it in Supabase Dashboard → Storage.")
+        elif "permission" in error_msg.lower() or "unauthorized" in error_msg.lower():
+            st.error(f"❌ Permission denied. Make sure your bucket '{bucket}' has RLS policies allowing uploads.")
+        else:
+            st.error(f"❌ Upload failed: {error_msg}")
+        st.stop()
+
+
+def save_submission(team: str, student_name: str, email: str, row: Dict[str, Any], files: Dict[str, Any]):
+    sb = get_client()
+    bucket, table, _ = get_storage_cfg()
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Unique file keys per upload
+    shot0_url = upload_to_storage(sb, files.get("shot0"), f"{team}/{ts}-near0-{uuid.uuid4().hex}", bucket) if files.get("shot0") else ""
+    shot1_url = upload_to_storage(sb, files.get("shot1"), f"{team}/{ts}-near1-{uuid.uuid4().hex}", bucket) if files.get("shot1") else ""
+    shothi_url = upload_to_storage(sb, files.get("shothi"), f"{team}/{ts}-high-{uuid.uuid4().hex}", bucket) if files.get("shothi") else ""
+
+    payload = {
+        "team": (team or "").strip(),
+        "student_name": (student_name or "").strip(),
+        "email": (email or "").strip(),
+        "stock0": (row.get("stock0") or "").strip().upper(),
+        "beta0": row.get("beta0"),
+        "stock1": (row.get("stock1") or "").strip().upper(),
+        "beta1": row.get("beta1"),
+        "stock_hi": (row.get("stock_hi") or "").strip().upper(),
+        "beta_hi": row.get("beta_hi"),
+        "shot0_url": shot0_url,
+        "shot1_url": shot1_url,
+        "shothi_url": shothi_url,
+        "notes": (row.get("notes") or "").strip(),
+    }
+
+    res = sb.table(table).insert(payload).execute()
+    return {"res": res, "shot0_url": shot0_url, "shot1_url": shot1_url, "shothi_url": shothi_url}
+
+
+def fetch_latest_by_team() -> List[Dict[str, Any]]:
+    sb = get_client()
+    _, table, _ = get_storage_cfg()
+    res = sb.table(table).select("*").order("created_at", desc=True).execute()
+    rows = res.data or []
+
+    # Keep only the most recent per team
+    latest = {}
+    for r in rows:
+        t = (r.get("team") or "").strip()
+        if t and t not in latest:
+            latest[t] = r
+    return list(latest.values())
+
+
+def compute_scores(rows: List[Dict[str, Any]]):
+    for r in rows:
+        r["err0"] = None if r.get("beta0") is None else abs(r["beta0"] - TARGETS["near_zero"])
+        r["err1"] = None if r.get("beta1") is None else abs(r["beta1"] - TARGETS["near_one"])
+        r["hi_score"] = None if r.get("beta_hi") is None else r["beta_hi"]
+
+    near0 = [r for r in rows if r.get("err0") is not None]
+    near1 = [r for r in rows if r.get("err1") is not None]
+    high  = [r for r in rows if r.get("hi_score") is not None]
+
+    near0.sort(key=lambda r: r["err0"])                # closer to 0 is better
+    near1.sort(key=lambda r: r["err1"])                # closer to 1 is better
+    high.sort(key=lambda r: r["hi_score"], reverse=True)  # higher is better
+
+    rank0 = {r["team"]: i+1 for i, r in enumerate(near0)}
+    rank1 = {r["team"]: i+1 for i, r in enumerate(near1)}
+    rankh = {r["team"]: i+1 for i, r in enumerate(high)}
+
+    for r in rows:
+        r["rank0"] = rank0.get(r.get("team"))
+        r["rank1"] = rank1.get(r.get("team"))
+        r["rankh"] = rankh.get(r.get("team"))
+        ranks = [x for x in (r["rank0"], r["rank1"], r["rankh"]) if x is not None]
+        r["total_rank"] = sum(ranks) if ranks else None
+
+    overall = [r for r in rows if r.get("total_rank") is not None]
+    overall.sort(key=lambda r: (r["total_rank"], r.get("created_at")))
+
+    return {"near0": near0, "near1": near1, "high": high, "overall": overall}
+
+# ---------- UI ----------
+st.set_page_config(page_title="Beta Hunt – Leaderboard", page_icon="📈", layout="wide")
+st.title(APP_TITLE)
+
+st.caption("Submit three stocks with betas and screenshots as proof. Your latest submission counts.")
+
+# Branding (optional): light accent line using your brand color (RGB 9,155,221)
+st.markdown("""
+<style>
+:root { --brand: rgb(9,155,221); }
+.block-container { padding-top: 2rem; }
+h1, h2, h3 { font-family: Calibri, Arial, sans-serif; }
+hr { border: none; height: 2px; background: linear-gradient(90deg, var(--brand), transparent); }
+</style>
+""", unsafe_allow_html=True)
+
+submit_tab, leaderboard_tab, admin_tab = st.tabs(["Submit", "Leaderboard", "Admin 🔒"])
+
+with submit_tab:
+    st.subheader("Submit your picks")
+    with st.form("submission_form", clear_on_submit=False):
+        student_name = st.text_input("Your name *")
+        email = st.text_input("Email *")
+
+        st.markdown("---")
+        st.markdown("**1) Near 0 beta**")
+        c1, c2, c3 = st.columns([2,1,2])
+        with c1:
+            stock0 = st.text_input("Ticker / Company", key="stock0")
+        with c2:
+            beta0 = st.text_input("Beta", key="beta0")
+        with c3:
+            shot0 = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shot0")
+
+        st.markdown("**2) Near 1 beta**")
+        c1, c2, c3 = st.columns([2,1,2])
+        with c1:
+            stock1 = st.text_input("Ticker / Company", key="stock1")
+        with c2:
+            beta1 = st.text_input("Beta", key="beta1")
+        with c3:
+            shot1 = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shot1")
+
+        st.markdown("**3) Highest beta**")
+        c1, c2, c3 = st.columns([2,1,2])
+        with c1:
+            stock_hi = st.text_input("Ticker / Company", key="stock_hi")
+        with c2:
+            beta_hi = st.text_input("Beta", key="beta_hi")
+        with c3:
+            shothi = st.file_uploader("Screenshot (PNG/JPG/PDF) *", type=["png","jpg","jpeg","pdf"], key="shothi")
+
+        notes = st.text_area("Notes (optional)")
+        agree = st.checkbox("I confirm these values are taken from a reliable source and the screenshots are unedited.")
+        submitted = st.form_submit_button("Submit / Update my entry", use_container_width=True)
+
+    if submitted:
+        # Required fields
+        if not student_name or not student_name.strip():
+            st.error("Please enter your name.")
+            st.stop()
+        if not email or not email.strip():
+            st.error("Please enter your email.")
+            st.stop()
+        if not validate_email(email):
+            st.error("Please enter a valid email address (e.g., student@university.edu).")
+            st.stop()
+        
+        # Check screenshots are uploaded
+        if not shot0:
+            st.error("Please upload a screenshot for the near 0 beta stock.")
+            st.stop()
+        if not shot1:
+            st.error("Please upload a screenshot for the near 1 beta stock.")
+            st.stop()
+        if not shothi:
+            st.error("Please upload a screenshot for the highest beta stock.")
+            st.stop()
+        
+        b0 = _safe_float(beta0)
+        b1 = _safe_float(beta1)
+        bhi = _safe_float(beta_hi)
+        errs = validate_betas(b0, b1, bhi)
+        if not agree:
+            errs.append("Please tick the confirmation checkbox.")
+        if errs:
+            for e in errs:
+                st.error(e)
+            st.stop()
+        with st.spinner("Saving your submission..."):
+            result = save_submission(
+                team=(email or "").strip().lower(),
+                student_name=student_name,
+                email=email,
+                row={
+                    "stock0": stock0,
+                    "beta0": b0,
+                    "stock1": stock1,
+                    "beta1": b1,
+                    "stock_hi": stock_hi,
+                    "beta_hi": bhi,
+                    "notes": notes,
+                },
+                files={"shot0": shot0, "shot1": shot1, "shothi": shothi},
+            )
+        # Show upload links if available
+        urls = [
+            ("Near 0", result.get("shot0_url")),
+            ("Near 1", result.get("shot1_url")),
+            ("Highest", result.get("shothi_url")),
+        ]
+        have_any = any(u for _, u in urls)
+        if have_any:
+            st.toast("Uploads saved", icon="✅")
+            upload_text = "**Evidence uploaded:**\n" + "\n".join([f"- {label}: [{url}]({url})" for label, url in urls if url])
+            st.markdown(upload_text)
+        st.success("Submitted ✓")
+        try:
+            st.rerun()                 # Streamlit ≥ 1.32
+        except Exception:
+            st.experimental_rerun()    # fallback
+
+with leaderboard_tab:
+    st.subheader("Live leaderboard")
+
+    # Manual refresh button (robust & version-safe)
+    if st.button("🔄 Refresh leaderboard"):
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
+
+    st.caption("The latest submission per student counts toward the ranking.")
+
+    rows = fetch_latest_by_team()
+    scores = compute_scores(rows)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("### 🥇 Closest to 0")
+        data = [{
+            "Rank": i+1,
+            "Name": r.get("student_name"),
+            "Email": r.get("email"),
+            "Stock": r.get("stock0"),
+            "Beta": r.get("beta0"),
+            "Error": round(r.get("err0"), 4) if r.get("err0") is not None else None,
+        } for i, r in enumerate(scores["near0"][:10])]
+        st.dataframe(data, use_container_width=True, hide_index=True)
+
+    with c2:
+        st.markdown("### 🥈 Closest to 1")
+        data = [{
+            "Rank": i+1,
+            "Team": r["team"],
+            "Stock": r.get("stock1"),
+            "Beta": r.get("beta1"),
+            "Error": round(r.get("err1"), 4) if r.get("err1") is not None else None,
+        } for i, r in enumerate(scores["near1"][:10])]
+        st.dataframe(data, use_container_width=True, hide_index=True)
+
+    with c3:
+        st.markdown("### 🥉 Highest beta")
+        data = [{
+            "Rank": i+1,
+            "Team": r["team"],
+            "Stock": r.get("stock_hi"),
+            "Beta": r.get("beta_hi"),
+        } for i, r in enumerate(scores["high"][:10])]
+        st.dataframe(data, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("### Overall (sum of ranks)")
+    data = [{
+        "Rank": i+1,
+        "Team": r["team"],
+        "Near 0 rank": r.get("rank0"),
+        "Near 1 rank": r.get("rank1"),
+        "High beta rank": r.get("rankh"),
+        "Total": r.get("total_rank"),
+    } for i, r in enumerate(scores["overall"][:20])]
+    st.dataframe(data, use_container_width=True, hide_index=True)
+
+with admin_tab:
+    st.subheader("Admin tools")
+    _, table_name, admin_pw = get_storage_cfg()
+    entered = st.text_input("Admin passphrase", type="password")
+    
+    if entered and entered == admin_pw:
+        st.success("Access granted")
+        sb = get_client()
+        
+        st.markdown("### Delete specific submissions")
+        team_to_delete = st.text_input("Email to delete")
+        if st.button("Delete submissions") and team_to_delete.strip():
+            sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
+            st.success(f"Deleted submissions for '{team_to_delete}'.")
+        
+        st.markdown("---")
+        st.markdown("### Delete all submissions")
+        st.warning("⚠️ This will permanently delete ALL submissions from the database!")
+        confirm_delete_all = st.checkbox("I understand this will delete everything")
+        if st.button("Delete ALL submissions", type="primary") and confirm_delete_all:
+            # Delete all rows from the table
+            sb.table(table_name).delete().neq("id", 0).execute()  # neq with impossible condition deletes all
+            st.success("All submissions have been deleted.")
+            time.sleep(1)
+            try:
+                st.rerun()
+            except Exception:
+                st.experimental_rerun()
+    else:
+        st.info("Enter the admin passphrase to access exports and deletion tools.")
+
+    return re.match(pattern, email.strip()) is not None
 
 
 def validate_betas(beta0, beta1, betahi) -> List[str]:
