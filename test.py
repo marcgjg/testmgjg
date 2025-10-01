@@ -145,7 +145,8 @@ def save_submission(team: str, student_name: str, email: str, row: Dict[str, Any
         "notes": (row.get("notes") or "").strip(),
     }
 
-    return sb.table(table).insert(payload).execute()
+    res = sb.table(table).insert(payload).execute()
+    return {"res": res, "shot0_url": shot0_url, "shot1_url": shot1_url, "shothi_url": shothi_url}
 
 
 def fetch_latest_by_team() -> List[Dict[str, Any]]:
@@ -214,9 +215,8 @@ submit_tab, leaderboard_tab, admin_tab = st.tabs(["Submit", "Leaderboard", "Admi
 with submit_tab:
     st.subheader("Submit your picks")
     with st.form("submission_form", clear_on_submit=False):
-        team = st.text_input("Team name *", placeholder="e.g., Team Delta")
         student_name = st.text_input("Your name (optional)")
-        email = st.text_input("Email (optional)")
+        email = st.text_input("Email *")
 
         st.markdown("---")
         st.markdown("**1) Near 0 beta**")
@@ -248,11 +248,15 @@ with submit_tab:
 
         notes = st.text_area("Notes (optional)")
         agree = st.checkbox("I confirm these values are taken from a reliable source and the screenshots are unedited.")
-        submitted = st.form_submit_button("Submit / Update my team", use_container_width=True)
+        submitted = st.form_submit_button("Submit / Update my entry", use_container_width=True)
 
     if submitted:
-        if not team or not team.strip():
-            st.error("Please enter a team name.")
+        # Required fields
+        if not student_name or not student_name.strip():
+            st.error("Please enter your name.")
+            st.stop()
+        if not email or not email.strip():
+            st.error("Please enter your email.")
             st.stop()
         b0 = _safe_float(beta0)
         b1 = _safe_float(beta1)
@@ -265,8 +269,8 @@ with submit_tab:
                 st.error(e)
             st.stop()
         with st.spinner("Saving your submission..."):
-            _ = save_submission(
-                team=team,
+            result = save_submission(
+                team=(email or "").strip().lower(),
                 student_name=student_name,
                 email=email,
                 row={
@@ -280,6 +284,18 @@ with submit_tab:
                 },
                 files={"shot0": shot0, "shot1": shot1, "shothi": shothi},
             )
+        # Show upload links if available
+        urls = [
+            ("Near 0", result.get("shot0_url")),
+            ("Near 1", result.get("shot1_url")),
+            ("Highest", result.get("shothi_url")),
+        ]
+        have_any = any(u for _, u in urls)
+        if have_any:
+            st.toast("Uploads saved", icon="✅")
+            st.markdown("**Evidence uploaded:**
+" + "
+".join([f"- {label}: [{url}]({url})" for label, url in urls if url]))
         st.success("Submitted ✔")
         try:
             st.rerun()                 # Streamlit ≥ 1.32
@@ -306,7 +322,8 @@ with leaderboard_tab:
         st.markdown("### 🥇 Closest to 0")
         data = [{
             "Rank": i+1,
-            "Team": r["team"],
+            "Name": r.get("student_name"),
+            "Email": r.get("email"),
             "Stock": r.get("stock0"),
             "Beta": r.get("beta0"),
             "Error": round(r.get("err0"), 4) if r.get("err0") is not None else None,
@@ -350,30 +367,7 @@ with admin_tab:
     st.subheader("Admin tools")
     _, table_name, admin_pw = get_storage_cfg()
     entered = st.text_input("Admin passphrase", type="password")
-
-    if admin_pw and entered == admin_pw:
-        st.success("Admin mode enabled")
-        sb = get_client()
-        res = sb.table(table_name).select("*").order("created_at", desc=True).execute()
-        all_rows = res.data or []
-
-        st.download_button(
-            label="Download all submissions (CSV)",
-            data="\n".join([
-                ",".join([
-                    str(x.get("id", "")), str(x.get("created_at", "")), x.get("team", ""),
-                    x.get("student_name", ""), x.get("email", ""), x.get("stock0", ""),
-                    str(x.get("beta0", "")), x.get("stock1", ""), str(x.get("beta1", "")),
-                    x.get("stock_hi", ""), str(x.get("beta_hi", "")), x.get("shot0_url", ""),
-                    x.get("shot1_url", ""), x.get("shothi_url", ""), x.get("notes", "")
-                ]) for x in ([{"id":"id","created_at":"created_at","team":"team","student_name":"student_name","email":"email","stock0":"stock0","beta0":"beta0","stock1":"stock1","beta1":"beta1","stock_hi":"stock_hi","beta_hi":"beta_hi","shot0_url":"shot0_url","shot1_url":"shot1_url","shothi_url":"shothi_url","notes":"notes"}] + all_rows)
-            ]).encode("utf-8"),
-            file_name=f"beta_hunt_export_{int(time.time())}.csv",
-            mime="text/csv",
-        )
-
-        st.markdown("#### Delete a team (danger zone)")
-        team_to_delete = st.text_input("Team to delete")
+        team_to_delete = st.text_input("Email to delete (matches the 'team' column)" )
         if st.button("Delete team submissions") and team_to_delete.strip():
             sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
             st.success(f"Deleted submissions for '{team_to_delete}'.")
