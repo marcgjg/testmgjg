@@ -11,11 +11,12 @@
 # STREAMLIT SECRETS (required)
 # In your app settings → Secrets:
 # [supabase]
-url = "https://osbicvjsiptksuqkdwyt.supabase.co"
-key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zYmljdmpzaXB0a3N1cWtkd3l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzMzExOTIsImV4cCI6MjA3NDkwNzE5Mn0.ys3Fba-I8RsU9oSr6ZfVjIj2BE3OPJ4CjgbfGdXt4o4"
-bucket = "screenshots"   # create a public bucket with this name in Supabase Storage
-table = "submissions"     # create a table with the schema below
-admin_passphrase = "changeme"
+# [supabase]
+# url = "https://YOUR_PROJECT_ID.supabase.co"
+# key = "YOUR_ANON_KEY"
+# bucket = "screenshots"
+# table = "submissions"
+# admin_passphrase = "changeme"
 #
 # Supabase SQL (run once in SQL editor):
 # CREATE TABLE IF NOT EXISTS public.submissions (
