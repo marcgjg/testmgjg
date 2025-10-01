@@ -11,7 +11,6 @@
 # STREAMLIT SECRETS (required)
 # In your app settings → Secrets:
 # [supabase]
-# [supabase]
 # url = "https://YOUR_PROJECT_ID.supabase.co"
 # key = "YOUR_ANON_KEY"
 # bucket = "screenshots"
