@@ -110,13 +110,24 @@ def upload_to_storage(sb: Client, file, path: str, bucket: str) -> str:
     if hasattr(file, "seek"):
         file.seek(0)
 
-    # supabase-py v2 signature supports bytes and file_options
-    sb.storage.from_(bucket).upload(
-        path=path,
-        file=data,
-        file_options={"content-type": mime or "application/octet-stream", "x-upsert": "true"},
-    )
-    return sb.storage.from_(bucket).get_public_url(path)
+    try:
+        # supabase-py v2 signature supports bytes and file_options
+        sb.storage.from_(bucket).upload(
+            path=path,
+            file=data,
+            file_options={"content-type": mime or "application/octet-stream", "x-upsert": "true"},
+        )
+        return sb.storage.from_(bucket).get_public_url(path)
+    except Exception as e:
+        # Provide helpful error message
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            st.error(f"❌ Storage bucket '{bucket}' doesn't exist. Please create it in Supabase Dashboard → Storage.")
+        elif "permission" in error_msg.lower() or "unauthorized" in error_msg.lower():
+            st.error(f"❌ Permission denied. Make sure your bucket '{bucket}' has RLS policies allowing uploads.")
+        else:
+            st.error(f"❌ Upload failed: {error_msg}")
+        st.stop()
 
 
 def save_submission(team: str, student_name: str, email: str, row: Dict[str, Any], files: Dict[str, Any]):
@@ -204,7 +215,7 @@ st.caption("Submit three stocks with betas and screenshots as proof. Your latest
 st.markdown("""
 <style>
 :root { --brand: rgb(9,155,221); }
-.block-container { padding-top: 1rem; }
+.block-container { padding-top: 2rem; }
 h1, h2, h3 { font-family: Calibri, Arial, sans-serif; }
 hr { border: none; height: 2px; background: linear-gradient(90deg, var(--brand), transparent); }
 </style>
