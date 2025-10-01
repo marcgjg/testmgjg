@@ -209,7 +209,7 @@ def compute_scores(rows: List[Dict[str, Any]]):
 st.set_page_config(page_title="Beta Hunt – Leaderboard", page_icon="📈", layout="wide")
 st.title(APP_TITLE)
 
-st.caption("Submit three stocks with betas and screenshots as proof. Your latest submission per team counts.")
+st.caption("Submit three stocks with betas and screenshots as proof. Your latest submission counts.")
 
 # Branding (optional): light accent line using your brand color (RGB 9,155,221)
 st.markdown("""
@@ -393,9 +393,25 @@ with admin_tab:
     if entered and entered == admin_pw:
         st.success("Access granted")
         sb = get_client()
+        
+        st.markdown("### Delete specific submissions")
         team_to_delete = st.text_input("Email to delete (matches the 'team' column)")
-        if st.button("Delete team submissions") and team_to_delete.strip():
+        if st.button("Delete submissions") and team_to_delete.strip():
             sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
             st.success(f"Deleted submissions for '{team_to_delete}'.")
+        
+        st.markdown("---")
+        st.markdown("### Delete all submissions")
+        st.warning("⚠️ This will permanently delete ALL submissions from the database!")
+        confirm_delete_all = st.checkbox("I understand this will delete everything")
+        if st.button("Delete ALL submissions", type="primary") and confirm_delete_all:
+            # Delete all rows from the table
+            sb.table(table_name).delete().neq("id", 0).execute()  # neq with impossible condition deletes all
+            st.success("All submissions have been deleted.")
+            time.sleep(1)
+            try:
+                st.rerun()
+            except Exception:
+                st.experimental_rerun()
     else:
         st.info("Enter the admin passphrase to access exports and deletion tools.")
