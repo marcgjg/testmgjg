@@ -32,6 +32,7 @@
 # );
 # ------------------------------
 
+from __future__ import annotations
 import time
 import uuid
 from datetime import datetime, timezone
@@ -292,9 +293,7 @@ with submit_tab:
         have_any = any(u for _, u in urls)
         if have_any:
             st.toast("Uploads saved", icon="✅")
-            st.markdown("**Evidence uploaded:**
-" + "
-".join([f"- {label}: [{url}]({url})" for label, url in urls if url]))
+            st.markdown("**Evidence uploaded:**\\n" + "\\n".join([f"- {label}: [{url}]({url})" for label, url in urls if url]))" for label, url in urls if url]))
         st.success("Submitted ✔")
         try:
             st.rerun()                 # Streamlit ≥ 1.32
