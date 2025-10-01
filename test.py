@@ -334,7 +334,7 @@ with leaderboard_tab:
         except Exception:
             st.experimental_rerun()
 
-    st.caption("The latest submission per team counts toward the ranking.")
+    st.caption("The latest submission per student counts toward the ranking.")
 
     rows = fetch_latest_by_team()
     scores = compute_scores(rows)
@@ -395,7 +395,7 @@ with admin_tab:
         sb = get_client()
         
         st.markdown("### Delete specific submissions")
-        team_to_delete = st.text_input("Email to delete (matches the 'team' column)")
+        team_to_delete = st.text_input("Email to delete")
         if st.button("Delete submissions") and team_to_delete.strip():
             sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
             st.success(f"Deleted submissions for '{team_to_delete}'.")
