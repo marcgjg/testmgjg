@@ -32,7 +32,6 @@
 # );
 # ------------------------------
 
-from __future__ import annotations
 import time
 import uuid
 from datetime import datetime, timezone
