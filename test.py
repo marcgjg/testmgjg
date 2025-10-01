@@ -38,89 +38,70 @@ admin_passphrase = "changeme"  # optional, for admin-only tools
 # ------------------------------
 
 import io
+save_submission(
+team=team,
+student_name=student_name,
+email=email,
+row={"stock0": stock0, "beta0": b0, "stock1": stock1, "beta1": b1, "stock_hi": stock_hi, "beta_hi": bhi, "notes": notes},
+files={"shot0": shot0, "shot1": shot1, "shothi": shothi},
+)
+st.success("Submitted ✔")
+try:
+st.rerun()
+except Exception:
+st.experimental_rerun()
+
+
+with leaderboard_tab:
+st.subheader("Live leaderboard")
+if st.button("🔄 Refresh leaderboard"):
+try:
+st.rerun()
+except Exception:
+st.experimental_rerun()
+st.caption("The latest submission per team counts toward the ranking.")
+
+
+rows = fetch_latest_by_team()
+scores = compute_scores(rows)
 
 
 c1, c2, c3 = st.columns(3)
 with c1:
 st.markdown("### 🥇 Closest to 0")
-data = [{
-"Rank": i+1,
-"Team": r["team"],
-"Stock": r.get("stock0"),
-"Beta": r.get("beta0"),
-"Error": round(r.get("err0"), 4) if r.get("err0") is not None else None,
-} for i, r in enumerate(scores["near0"][:10])]
+data = [{"Rank": i+1, "Team": r["team"], "Stock": r.get("stock0"), "Beta": r.get("beta0"), "Error": round(r.get("err0"), 4) if r.get("err0") is not None else None} for i, r in enumerate(scores["near0"][:10])]
 st.dataframe(data, use_container_width=True, hide_index=True)
-
-
 with c2:
 st.markdown("### 🥈 Closest to 1")
-data = [{
-"Rank": i+1,
-"Team": r["team"],
-"Stock": r.get("stock1"),
-"Beta": r.get("beta1"),
-"Error": round(r.get("err1"), 4) if r.get("err1") is not None else None,
-} for i, r in enumerate(scores["near1"][:10])]
+data = [{"Rank": i+1, "Team": r["team"], "Stock": r.get("stock1"), "Beta": r.get("beta1"), "Error": round(r.get("err1"), 4) if r.get("err1") is not None else None} for i, r in enumerate(scores["near1"][:10])]
 st.dataframe(data, use_container_width=True, hide_index=True)
-
-
 with c3:
 st.markdown("### 🥉 Highest beta")
-data = [{
-"Rank": i+1,
-"Team": r["team"],
-"Stock": r.get("stock_hi"),
-"Beta": r.get("beta_hi"),
-} for i, r in enumerate(scores["high"][:10])]
+data = [{"Rank": i+1, "Team": r["team"], "Stock": r.get("stock_hi"), "Beta": r.get("beta_hi")} for i, r in enumerate(scores["high"][:10])]
 st.dataframe(data, use_container_width=True, hide_index=True)
 
 
 st.markdown("---")
 st.markdown("### Overall (sum of ranks)")
-data = [{
-"Rank": i+1,
-"Team": r["team"],
-"Near 0 rank": r.get("rank0"),
-"Near 1 rank": r.get("rank1"),
-"High beta rank": r.get("rankh"),
-"Total": r.get("total_rank"),
-} for i, r in enumerate(scores["overall"][:20])]
+data = [{"Rank": i+1, "Team": r["team"], "Near 0 rank": r.get("rank0"), "Near 1 rank": r.get("rank1"), "High beta rank": r.get("rankh"), "Total": r.get("total_rank")} for i, r in enumerate(scores["overall"][:20])]
 st.dataframe(data, use_container_width=True, hide_index=True)
-
-
 
 
 with admin_tab:
 st.subheader("Admin tools")
 _, table_name, admin_pw = get_storage_cfg()
 entered = st.text_input("Admin passphrase", type="password")
-
-
 if admin_pw and entered == admin_pw:
 st.success("Admin mode enabled")
-# light tools: export CSV, delete team rows
 sb = get_client()
 res = sb.table(table_name).select("*").order("created_at", desc=True).execute()
 all_rows = res.data or []
-
-
 st.download_button(
 label="Download all submissions (CSV)",
-data="\n".join([
-",".join([
-str(x.get("id", "")), str(x.get("created_at", "")), x.get("team", ""),
-x.get("student_name", ""), x.get("email", ""), x.get("stock0", ""),
-str(x.get("beta0", "")), x.get("stock1", ""), str(x.get("beta1", "")),
-x.get("stock_hi", ""), str(x.get("beta_hi", "")), x.get("shot0_url", ""),
-x.get("shot1_url", ""), x.get("shothi_url", ""), x.get("notes", "")
-]) for x in ([{"id":"id","created_at":"created_at","team":"team","student_name":"student_name","email":"email","stock0":"stock0","beta0":"beta0","stock1":"stock1","beta1":"beta1","stock_hi":"stock_hi","beta_hi":"beta_hi","shot0_url":"shot0_url","shot1_url":"shot1_url","shothi_url":"shothi_url","notes":"notes"}] + all_rows)
-]).encode("utf-8"),
+data="\n".join([",".join([str(x.get("id", "")), str(x.get("created_at", "")), x.get("team", ""), x.get("student_name", ""), x.get("email", ""), x.get("stock0", ""), str(x.get("beta0", "")), x.get("stock1", ""), str(x.get("beta1", "")), x.get("stock_hi", ""), str(x.get("beta_hi", "")), x.get("shot0_url", ""), x.get("shot1_url", ""), x.get("shothi_url", ""), x.get("notes", "")]) for x in ([{"id":"id","created_at":"created_at","team":"team","student_name":"student_name","email":"email","stock0":"stock0","beta0":"beta0","stock1":"stock1","beta1":"beta1","stock_hi":"stock_hi","beta_hi":"beta_hi","shot0_url":"shot0_url","shot1_url":"shot1_url","shothi_url":"shothi_url","notes":"notes"}] + all_rows)]).encode("utf-8"),
 file_name=f"beta_hunt_export_{int(time.time())}.csv",
 mime="text/csv",
 )
-
-
 st.markdown("#### Delete a team (danger zone)")
 team_to_delete = st.text_input("Team to delete")
 if st.button("Delete team submissions") and team_to_delete.strip():
@@ -128,10 +109,3 @@ sb.table(table_name).delete().eq("team", team_to_delete.strip()).execute()
 st.success(f"Deleted submissions for '{team_to_delete}'.")
 else:
 st.info("Enter the admin passphrase to access exports and deletion tools.")
-
-
-# ------------------------------
-# OPTIONAL: Google Sheets variant (not implemented in code)
-# If you'd rather avoid Supabase, you can use a Google Sheet as the backend via gspread.
-# Trade-offs: easier setup but weaker file uploads (you'd ask students to paste a Drive/Dropbox link instead of uploading).
-# ------------------------------
