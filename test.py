@@ -32,6 +32,7 @@
 # );
 # ------------------------------
 
+from __future__ import annotations
 import time
 import uuid
 from datetime import datetime, timezone
@@ -113,7 +114,7 @@ def upload_to_storage(sb: Client, file, path: str, bucket: str) -> str:
     sb.storage.from_(bucket).upload(
         path=path,
         file=data,
-        file_options={"content-type": mime or "application/octet-stream", "upsert": True},
+        file_options={"content-type": mime or "application/octet-stream", "x-upsert": "true"},
     )
     return sb.storage.from_(bucket).get_public_url(path)
 
