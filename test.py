@@ -11,11 +11,11 @@
 # SETUP INSTRUCTIONS (short)
 # 1) Create a free Supabase project → copy the Project URL and anon key into st.secrets:
 #    [supabase]
-    url = "https://osbicvjsiptksuqkdwyt.supabase.co"
-    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zYmljdmpzaXB0a3N1cWtkd3l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzMzExOTIsImV4cCI6MjA3NDkwNzE5Mn0.ys3Fba-I8RsU9oSr6ZfVjIj2BE3OPJ4CjgbfGdXt4o4"
-    bucket = "screenshots"   # create a public bucket with this name in Supabase Storage
-    table = "submissions"     # create a table with the schema below
-    admin_passphrase = "changeme"  # optional, for admin-only tools
+url = "https://osbicvjsiptksuqkdwyt.supabase.co"
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zYmljdmpzaXB0a3N1cWtkd3l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzMzExOTIsImV4cCI6MjA3NDkwNzE5Mn0.ys3Fba-I8RsU9oSr6ZfVjIj2BE3OPJ4CjgbfGdXt4o4"
+bucket = "screenshots"   # create a public bucket with this name in Supabase Storage
+table = "submissions"     # create a table with the schema below
+admin_passphrase = "changeme"  # optional, for admin-only tools
 #
 # 2) In Supabase SQL editor, create the table:
 #    CREATE TABLE IF NOT EXISTS public.submissions (
