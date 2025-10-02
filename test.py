@@ -228,7 +228,7 @@ def compute_scores(rows: List[Dict[str, Any]]):
 st.set_page_config(page_title="Beta Hunt – Leaderboard", page_icon="📈", layout="wide")
 st.title(APP_TITLE)
 
-st.caption("Submit three stocks with betas and screenshots as proof. Your latest submission counts.")
+st.caption("Submit three stocks with betas and screenshots as proof. Each student can submit only once.")
 
 # Branding (optional): light accent line using your brand color (RGB 9,155,221)
 st.markdown("""
@@ -278,7 +278,7 @@ with submit_tab:
 
         notes = st.text_area("Notes (optional)")
         agree = st.checkbox("I confirm these values are taken from a reliable source and the screenshots are unedited.")
-        submitted = st.form_submit_button("Submit / Update my entry", use_container_width=True)
+        submitted = st.form_submit_button("Submit my entry", use_container_width=True)
 
     if submitted:
         # Required fields
@@ -290,6 +290,14 @@ with submit_tab:
             st.stop()
         if not validate_email(email):
             st.error("Please enter a valid email address (e.g., student@university.edu).")
+            st.stop()
+        
+        # Check if this email has already submitted
+        sb = get_client()
+        _, table_name, _ = get_storage_cfg()
+        existing = sb.table(table_name).select("id").eq("team", email.strip().lower()).execute()
+        if existing.data and len(existing.data) > 0:
+            st.error("❌ This email has already submitted. Each student can only submit once. If you need to change your submission, please contact the instructor.")
             st.stop()
         
         # Check screenshots are uploaded
