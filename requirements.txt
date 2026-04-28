@@ -1,4 +1,4 @@
 streamlit
-supabase
+numpy
 pandas
-requests
+plotly
